@@ -19,9 +19,13 @@ class TranscriptValidationError(ValueError):
 def parse_transcript(transcript: str) -> list[TranscriptTurn]:
     turns: list[TranscriptTurn] = []
     rejected: list[int] = []
+    current_source: str | None = None
 
     for line_number, raw_line in enumerate(transcript.splitlines(), start=1):
         if not raw_line.strip():
+            continue
+        if raw_line.startswith("--- 파일:") and raw_line.rstrip().endswith("---"):
+            current_source = raw_line.removeprefix("--- 파일:").removesuffix("---").strip()
             continue
         match = TIMESTAMPED_LINE.match(raw_line)
         if not match:
@@ -32,6 +36,7 @@ def parse_transcript(transcript: str) -> list[TranscriptTurn]:
                 speaker=match.group("speaker").strip(),
                 text=match.group("text").strip(),
                 timestamp=match.group("bracket_time") or match.group("plain_time"),
+                source=current_source,
             )
         )
 

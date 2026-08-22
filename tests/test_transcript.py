@@ -20,3 +20,16 @@ def test_rejects_unlabelled_lines() -> None:
 def test_requires_multiple_speakers() -> None:
     with pytest.raises(TranscriptValidationError, match="최소 2명"):
         parse_transcript("A: 하나\nA: 둘\nA: 셋")
+
+
+def test_tracks_multi_file_source_delimiters() -> None:
+    turns = parse_transcript(
+        "--- 파일: first.txt ---\nA: 하나\nB: 둘\n"
+        "--- 파일: second.md ---\nA: 셋"
+    )
+
+    assert [turn.source for turn in turns] == [
+        "first.txt",
+        "first.txt",
+        "second.md",
+    ]

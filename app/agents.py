@@ -16,6 +16,7 @@ from app.models import (
     ActionPlan,
     AnalysisRequest,
     AnalysisResponse,
+    ExecutiveSummary,
     PipelineStage,
     SelfCoaching,
     StakeholderProfile,
@@ -33,6 +34,11 @@ class AgentOutputError(RuntimeError):
 
 class StakeholderOutput(BaseModel):
     stakeholders: list[StakeholderProfile]
+
+
+class MeetingSynthesis(BaseModel):
+    executive_summary: ExecutiveSummary
+    action_plan: ActionPlan
 
 
 JSON_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
@@ -103,11 +109,17 @@ async def run_live_pipeline(
     request: AnalysisRequest,
     progress,
 ) -> AnalysisResponse:
+    async def emit(stage: str, status: str, detail: str) -> None:
+        if progress:
+            await progress(stage, status, detail)
+
     self_schema = json.dumps(SelfCoaching.model_json_schema(), ensure_ascii=False)
     stakeholder_schema = json.dumps(
         StakeholderOutput.model_json_schema(), ensure_ascii=False
     )
-    action_schema = json.dumps(ActionPlan.model_json_schema(), ensure_ascii=False)
+    action_schema = json.dumps(
+        MeetingSynthesis.model_json_schema(), ensure_ascii=False
+    )
 
     self_agent = _make_agent(
         "SelfCoachAgent",
@@ -134,13 +146,14 @@ async def run_live_pipeline(
             "당신은 실행 계획 에이전트입니다. 원본 대화록과 앞선 두 분석을 종합해 명시적 결정, "
             "미해결 질문, 담당자/기한/행동 항목, 추천 후속 조치를 만드세요. 대화에 없는 담당자나 "
             "기한은 사실처럼 만들지 말고 '확인 필요'로 표시하세요. 모든 행동에는 인용 근거를 "
-            "연결하세요. 주어진 JSON Schema를 정확히 따르는 JSON만 반환하세요."
+            "연결하세요. 10초 안에 읽을 한눈에 보는 핵심도 함께 만드세요. "
+            "주어진 JSON Schema를 정확히 따르는 JSON만 반환하세요."
         ),
     )
 
     @executor(id="self-coach")
     async def self_coach_node(payload: str, ctx: WorkflowContext[str]) -> None:
-        await progress(
+        await emit(
             "self-coach", "running", "Copilot SDK가 본인 발화를 근거 중심으로 분석합니다."
         )
         source = json.loads(payload)
@@ -157,12 +170,12 @@ async def run_live_pipeline(
                 "SelfCoachAgent 응답이 계약을 충족하지 않았습니다."
             ) from exc
         source["self_coaching"] = coaching.model_dump()
-        await progress("self-coach", "complete", "본인 코칭을 완료했습니다.")
+        await emit("self-coach", "complete", "본인 코칭을 완료했습니다.")
         await ctx.send_message(json.dumps(source, ensure_ascii=False))
 
     @executor(id="stakeholder")
     async def stakeholder_node(payload: str, ctx: WorkflowContext[str]) -> None:
-        await progress(
+        await emit(
             "stakeholder", "running", "다른 화자의 명시적 요구와 가설을 분리합니다."
         )
         source = json.loads(payload)
@@ -188,7 +201,7 @@ async def run_live_pipeline(
                 "StakeholderAgent가 모든 다른 화자를 정확히 포함하지 않았습니다."
             )
         source["stakeholders"] = output.model_dump()["stakeholders"]
-        await progress(
+        await emit(
             "stakeholder",
             "complete",
             f"{len(output.stakeholders)}명의 근거 기반 맵을 완성했습니다.",
@@ -199,7 +212,7 @@ async def run_live_pipeline(
     async def action_node(
         payload: str, ctx: WorkflowContext[Never, str]
     ) -> None:
-        await progress(
+        await emit(
             "action-planner", "running", "이전 에이전트 출력을 실행 계획으로 종합합니다."
         )
         source = json.loads(payload)
@@ -207,17 +220,22 @@ async def run_live_pipeline(
             f"대화록(JSON): {json.dumps(source['turns'], ensure_ascii=False)}\n"
             f"본인 코칭(JSON): {json.dumps(source['self_coaching'], ensure_ascii=False)}\n"
             f"이해관계자 맵(JSON): {json.dumps(source['stakeholders'], ensure_ascii=False)}\n"
+            f"일정(JSON, 없으면 null): {json.dumps(source['schedule'], ensure_ascii=False)}\n"
+            "일정에 없는 마감은 만들지 마세요.\n"
             f"출력 JSON Schema: {action_schema}"
         )
         response = await action_agent.run(prompt)
         try:
-            plan = ActionPlan.model_validate(_extract_json(response.text))
+            synthesis = MeetingSynthesis.model_validate(
+                _extract_json(response.text)
+            )
         except ValidationError as exc:
             raise AgentOutputError(
                 "ActionPlannerAgent 응답이 계약을 충족하지 않았습니다."
             ) from exc
-        source["action_plan"] = plan.model_dump()
-        await progress("action-planner", "complete", "실행 계획을 완성했습니다.")
+        source["executive_summary"] = synthesis.executive_summary.model_dump()
+        source["action_plan"] = synthesis.action_plan.model_dump()
+        await emit("action-planner", "complete", "실행 계획을 완성했습니다.")
         await ctx.yield_output(json.dumps(source, ensure_ascii=False))
 
     workflow = (
@@ -230,6 +248,9 @@ async def run_live_pipeline(
         {
             "self_speaker": request.self_speaker,
             "turns": _turns_payload(turns),
+            "schedule": request.schedule.model_dump(mode="json")
+            if request.schedule
+            else None,
         },
         ensure_ascii=False,
     )
@@ -249,7 +270,8 @@ async def run_live_pipeline(
     return AnalysisResponse(
         analysis_id=os.urandom(16).hex(),
         mode="live",
-        mode_label="Live · Microsoft Agent Framework + GitHub Copilot SDK",
+        mode_label="AI 심층 분석 · MAF + Copilot SDK",
+        schedule=request.schedule,
         pipeline=[
             PipelineStage(
                 id="self-coach",
@@ -270,6 +292,9 @@ async def run_live_pipeline(
                 detail="MAF workflow 종합 완료",
             ),
         ],
+        executive_summary=ExecutiveSummary.model_validate(
+            payload["executive_summary"]
+        ),
         self_coaching=SelfCoaching.model_validate(payload["self_coaching"]),
         stakeholders=[
             StakeholderProfile.model_validate(item)

@@ -4,7 +4,7 @@ This project was built with the microsoft-foundry skill. Before working on or an
 
 ## Product boundary
 
-Meeting Mirror is a login-free, text-only meeting coach. Keep transcript processing request-scoped: do not add persistence, user accounts, recording, calendar, or email integrations. Treat stakeholder goals as hypotheses, never facts, and do not infer personality, emotion, deception, health, identity, or other sensitive traits.
+Meeting Mirror is a login-free meeting and presentation coach. Keep server transcript processing request-scoped: do not add server persistence, user accounts, recording bots, OAuth calendar, or email integrations. The only persistence is the documented browser-local IndexedDB calendar, with transcript/result save opt-in and off by default. Treat stakeholder goals as hypotheses, never facts, and do not infer personality, emotion, deception, health, identity, or other sensitive traits.
 
 ## Architecture and ownership
 

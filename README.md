@@ -1,6 +1,8 @@
 # Meeting Mirror
 
-**An evidence-first personal meeting coach:** analyze your speaking behavior, map every other participant’s explicit needs and possible goals, and leave with concrete follow-up actions.
+**Public web app:** <https://ca-meeting-mirror-ygp6sffvrfkjq.braveriver-91d86e5f.koreacentral.azurecontainerapps.io>
+
+Meeting Mirror has two evidence-first modes: **발표 개선** for structure, clarity, evidence, repeated wording, Q&A, and rehearsal; and **회의 맥락·참여자 목적 분석** for self coaching, explicit stakeholder needs, verifiable hypotheses, and follow-up actions.
 
 [![Python](https://img.shields.io/badge/Python-3.11%2B-335bd7)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-009688)](https://fastapi.tiangolo.com/)
@@ -8,7 +10,7 @@
 
 ## Demo
 
-The public deployment is added here after the first Azure smoke test. No login is required: choose a Korean sample, select your speaker, confirm consent, and run the three-agent pipeline. The **Deterministic demo** option is always available without credentials.
+No login is required. Upload TXT/MD/PDF/DOCX, paste text, or open **예시로 체험하기**; select your speaker, confirm consent, and run the three-agent pipeline. The **빠른 기본 분석** path is rule-based and always available without credentials. The **AI 심층 분석** switch runs the real MAF + Copilot SDK route when the server reports it ready; the current Azure deployment is configured.
 
 Meeting Mirror never treats a model’s interpretation as hidden truth. Explicit statements are separate from hypotheses, and every hypothesis includes evidence, confidence, and a question to verify with that person.
 
@@ -24,6 +26,8 @@ flowchart LR
 ```
 
 The real path uses `agent-framework-github-copilot==1.0.3`, an Agent Framework `WorkflowBuilder`, and three `GitHubCopilotAgent` instances. Copilot SDK BYOK targets Azure OpenAI or a Microsoft Foundry-compatible endpoint. The public judge path is deterministic and visibly labeled.
+
+The page also includes an on-device meeting calendar backed by IndexedDB. Its seeded examples and user-saved metadata stay in that browser. Transcript/result persistence is opt-in and off by default. ICS export includes schedule metadata but never the transcript or inferred stakeholder details.
 
 ## Run locally
 
@@ -51,7 +55,8 @@ $env:BYOK_MODEL_ID = "gpt-4o-mini"
 .\.venv\Scripts\python.exe -m ruff check app tests
 ```
 
-Tests cover transcript validation, all five sample files, API errors, SSE stage progress, and response contracts.
+Tests cover transcript validation, all seven sample records, API errors, SSE stage progress, and response contracts.
+They also cover both product contracts, TXT/MD/PDF/DOCX extraction, multi-file source attribution, live callback regression, calendar metadata, and Korean/Asia-Seoul ICS output.
 
 ## Deploy to Azure
 
@@ -69,7 +74,7 @@ When ACR Tasks are disabled by subscription policy, dispatch `.github/workflows/
 
 ## Privacy and consent
 
-Transcripts and results are processed only in request memory and are not persisted by the application. Azure request logs do not contain bodies. Obtain participant consent and remove confidential or sensitive information before analysis.
+The server processes files, transcripts, and results only in request memory and does not persist them. Azure request logs do not contain bodies. The optional calendar stores records only in the current browser’s IndexedDB; saving transcript/result content is a separate checkbox that defaults off. Obtain participant consent and remove confidential or sensitive information before analysis.
 
 See [PRD.md](PRD.md) for acceptance criteria, [TRD.md](TRD.md) for precise SDK/deployment details, and [IDEATION.md](IDEATION.md) for scope decisions.
 

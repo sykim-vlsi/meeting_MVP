@@ -2,7 +2,7 @@
 
 ## Runtime architecture
 
-The application is one FastAPI service. It serves the static browser client, JSON APIs, and an SSE analysis endpoint. Azure Container Apps provides public HTTPS ingress. There is no database, queue, object storage, authentication layer, or transcript telemetry.
+The application is one FastAPI service. It serves the static browser client, JSON/file APIs, and an SSE analysis endpoint. Azure Container Apps provides public HTTPS ingress. There is no server database, queue, object storage, authentication layer, or transcript telemetry. The browser calendar uses versioned IndexedDB; full transcript/result storage is explicit opt-in.
 
 ```mermaid
 flowchart LR
@@ -25,6 +25,8 @@ flowchart LR
 - Three independently instructed `GitHubCopilotAgent` instances execute inside a `WorkflowBuilder` graph: `self-coach → stakeholder → action-planner`.
 - Each node validates model JSON against Pydantic before passing its envelope to the next node.
 - `app/pipeline.py` selects live mode whenever all required BYOK variables exist and the request mode is `auto`. A configured live failure is returned as an error; it is never disguised as demo output.
+- `app/presentation_agents.py` defines a distinct Structure → Clarity → Rehearsal workflow and validated presentation contract.
+- `app/extraction.py` performs bounded in-memory TXT/MD/PDF/DOCX extraction and an Azure Speech-gated MP3 path. It validates extension, MIME, and PDF/DOCX/MP3 signatures.
 
 The container pins `@github/copilot==1.0.80` and sets `GITHUB_COPILOT_CLI_PATH`. BYOK sends model usage to the configured provider and does not rely on interactive Copilot user authentication.
 
@@ -38,11 +40,14 @@ Live workflow execution is capped by `LIVE_AGENT_TIMEOUT_SECONDS` (120 seconds b
 | `/health` | GET | Liveness/readiness |
 | `/api/runtime` | GET | Reports live availability and effective default |
 | `/api/samples` | GET | Structured built-in samples |
+| `/api/fixtures` | GET | First-party downloadable test files |
+| `/api/extract`, `/api/extract/batch` | POST | Single/multi-file in-memory extraction |
+| `/api/calendar` | POST | Standards-compliant, transcript-free ICS |
 | `/api/parse` | POST | Validates transcript and returns speakers |
 | `/api/analyze` | POST | Non-streaming typed analysis |
 | `/api/analyze/stream` | POST | SSE progress plus final typed analysis |
 
-`AnalysisRequest` contains `transcript`, `self_speaker`, `mode`, and `consent_confirmed`. `AnalysisResponse` contains pipeline metadata, `SelfCoaching`, one `StakeholderProfile` per other speaker, `ActionPlan`, provenance mode, and the disclaimer. Definitions live in `app/models.py`.
+`AnalysisRequest` contains transcript, selected speaker, product/engine modes, optional schedule, and consent. Meeting and presentation responses have separate typed contracts; both start with `ExecutiveSummary`. Definitions live in `app/models.py`.
 
 SSE events are JSON objects:
 
@@ -59,7 +64,7 @@ SSE events are JSON objects:
 - Basic Azure Container Registry;
 - user-assigned managed identity with AcrPull;
 - Log Analytics workspace and Container Apps managed environment;
-- public HTTPS Container App with health probes, 0–2 replicas, 0.5 CPU, and 1 GiB memory.
+- public HTTPS Container App with health probes, 0–2 replicas, 1 CPU, and 2 GiB memory (required for concurrent Copilot CLI processes).
 
 The checked-in image is only a provisioning placeholder. `azd deploy` remotely builds the repository Dockerfile in ACR and replaces it.
 
@@ -83,6 +88,8 @@ Never commit these values or place them in deployment outputs. Configure the key
 
 - Input is validated and capped before analysis.
 - No endpoint writes transcripts or results to disk/database.
+- Uploaded files are read with 10MB/file, five-file, 25MB aggregate, and 60-second extraction limits. Temporary MP3 data is deleted in `finally`.
+- IndexedDB calendar data never leaves the browser except schedule metadata intentionally included in analysis or ICS. Transcript/result save defaults off.
 - Application logging does not log request bodies or agent prompts.
 - In-memory request objects become collectible after the response; no application-level retention exists.
 - HTTPS is enforced by Container Apps.
@@ -117,4 +124,6 @@ For Azure, set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` only in the comman
 
 ## Deployment limitations
 
-The current public environment intentionally has no BYOK model secret, so automated judges always have a reliable deterministic path. The production container includes the Copilot CLI and the live code path is selected automatically when BYOK settings exist. There is no application database, and no audio or external actions are implemented.
+The current public environment has a server-side Azure OpenAI BYOK secret, so the AI switch enables the real route. The key is an Azure Container Apps secret and never appears in source, output, or logs. Azure Speech is not configured, so MP3 returns a clear unavailable message; deterministic text/document flows remain complete. The production container includes Copilot CLI and Speech SDK so configured environments activate the real paths. MAF is Layer 1 and Container Apps/Bicep/azd are infrastructure; MCP and Aspire are intentionally absent because no justified remote-tool boundary requires them.
+
+Sanitized verification evidence: a local real Meeting Insight run completed SelfCoachAgent → StakeholderAgent → ActionPlannerAgent with typed summary/stakeholder/action output in 86.16 seconds. The checkpoint public image completed a real streaming meeting run in 55.6 seconds. Final deployment verification runs both real modes again and records only status, latency, stage names/count, and contract presence.
