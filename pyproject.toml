@@ -10,6 +10,9 @@ dependencies = [
   "uvicorn[standard]==0.35.0",
 ]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [project.optional-dependencies]
 dev = [
   "httpx==0.28.1",
