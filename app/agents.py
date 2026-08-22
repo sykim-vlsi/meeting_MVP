@@ -45,6 +45,8 @@ class StakeholderOutput(BaseModel):
 
 
 class MeetingSynthesis(BaseModel):
+    self_coaching: SelfCoaching
+    stakeholders: list[StakeholderProfile]
     executive_summary: ExecutiveSummary
     action_plan: ActionPlan
 
@@ -262,6 +264,9 @@ async def run_live_pipeline(
             "미해결 질문, 담당자/기한/행동 항목, 추천 후속 조치를 만드세요. 대화에 없는 담당자나 "
             "기한은 사실처럼 만들지 말고 '확인 필요'로 표시하세요. 모든 행동에는 인용 근거를 "
             "연결하세요. 10초 안에 읽을 한눈에 보는 핵심도 함께 만드세요. "
+            "앞선 본인 코칭과 이해관계자 분석의 모든 비인용 사용자용 문장을 자연스러운 "
+            "한국어로 다시 작성해 self_coaching과 stakeholders에도 포함하세요. "
+            "직접 인용문, 화자명, 타임스탬프, 상태값은 바꾸지 마세요. "
             "주어진 JSON Schema를 정확히 따르는 JSON만 반환하세요."
         ),
     )
@@ -423,6 +428,10 @@ async def run_live_pipeline(
         synthesis = await _run_validated(
             action_agent, prompt, MeetingSynthesis, "ActionPlannerAgent"
         )
+        source["self_coaching"] = synthesis.self_coaching.model_dump()
+        source["stakeholders"] = [
+            profile.model_dump() for profile in synthesis.stakeholders
+        ]
         source["executive_summary"] = synthesis.executive_summary.model_dump()
         source["action_plan"] = synthesis.action_plan.model_dump()
         elapsed_ms = round((time.perf_counter() - started) * 1000)

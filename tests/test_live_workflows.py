@@ -58,6 +58,10 @@ async def test_meeting_live_workflow_allows_no_progress_callback(monkeypatch) ->
             ]
         },
         "ActionPlannerAgent": {
+            "self_coaching": coaching.model_dump(mode="json"),
+            "stakeholders": [
+                item.model_dump(mode="json") for item in stakeholders
+            ],
             "executive_summary": meeting_executive_summary(
                 coaching, stakeholders, plan
             ).model_dump(mode="json"),
@@ -106,6 +110,10 @@ async def test_meeting_live_workflow_emits_six_progress_events(monkeypatch) -> N
             "stakeholders": [item.model_dump(mode="json") for item in stakeholders]
         },
         "ActionPlannerAgent": {
+            "self_coaching": coaching.model_dump(mode="json"),
+            "stakeholders": [
+                item.model_dump(mode="json") for item in stakeholders
+            ],
             "executive_summary": meeting_executive_summary(
                 coaching, stakeholders, plan
             ).model_dump(mode="json"),
@@ -201,6 +209,10 @@ async def test_meeting_workflow_retries_english_generated_prose(monkeypatch) -> 
         ),
         "ActionPlannerAgent": FakeAgent(
             {
+                "self_coaching": coaching.model_dump(mode="json"),
+                "stakeholders": [
+                    item.model_dump(mode="json") for item in stakeholders
+                ],
                 "executive_summary": meeting_executive_summary(
                     coaching, stakeholders, plan
                 ).model_dump(mode="json"),
