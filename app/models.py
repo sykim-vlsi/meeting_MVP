@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, field_validator
 
 
 class AnalysisMode(str, Enum):
-    AUTO = "auto"
     LIVE = "live"
     DEMO = "demo"
 
@@ -47,7 +46,7 @@ class TranscriptSample(BaseModel):
 class AnalysisRequest(BaseModel):
     transcript: str = Field(min_length=20, max_length=50_000)
     self_speaker: str = Field(min_length=1, max_length=30)
-    mode: AnalysisMode = AnalysisMode.AUTO
+    mode: AnalysisMode = AnalysisMode.LIVE
     product_mode: ProductMode = ProductMode.MEETING_INSIGHT
     schedule: MeetingMetadata | None = None
     consent_confirmed: bool = False
@@ -56,6 +55,7 @@ class AnalysisRequest(BaseModel):
     @classmethod
     def normalize_speaker(cls, value: str) -> str:
         return value.strip()
+
 
 
 class Citation(BaseModel):

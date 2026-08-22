@@ -4,7 +4,13 @@ import asyncio
 import uuid
 from collections.abc import Awaitable, Callable
 
-from app.agents import LiveConfigurationError, live_is_configured, run_live_pipeline
+from app.agents import (
+    DemoModeDisabledError,
+    LiveConfigurationError,
+    demo_is_allowed,
+    live_is_configured,
+    run_live_pipeline,
+)
 from app.demo_analyzer import analyze_actions, analyze_self, analyze_stakeholders
 from app.models import (
     AnalysisMode,
@@ -173,16 +179,18 @@ async def run_pipeline(
     request: AnalysisRequest,
     progress: ProgressCallback | None = None,
 ) -> AnalysisResult:
-    if request.mode == AnalysisMode.LIVE and not live_is_configured():
-        raise LiveConfigurationError(
-            "Live mode is not configured. Use demo mode or configure BYOK settings."
-        )
-    if request.mode == AnalysisMode.LIVE or (
-        request.mode == AnalysisMode.AUTO and live_is_configured()
-    ):
+    if request.mode == AnalysisMode.DEMO:
+        if not demo_is_allowed():
+            raise DemoModeDisabledError(
+                "기본 분석은 개발·테스트 환경에서만 사용할 수 있습니다."
+            )
         if request.product_mode == ProductMode.PRESENTATION_COACH:
-            return await run_live_presentation_pipeline(turns, request, progress)
-        return await run_live_pipeline(turns, request, progress)
+            return await _demo_presentation_pipeline(turns, request, progress)
+        return await _demo_pipeline(turns, request, progress)
+    if not live_is_configured():
+        raise LiveConfigurationError(
+            "AI 심층 분석이 아직 준비되지 않았습니다. 관리자에게 문의해 주세요."
+        )
     if request.product_mode == ProductMode.PRESENTATION_COACH:
-        return await _demo_presentation_pipeline(turns, request, progress)
-    return await _demo_pipeline(turns, request, progress)
+        return await run_live_presentation_pipeline(turns, request, progress)
+    return await run_live_pipeline(turns, request, progress)

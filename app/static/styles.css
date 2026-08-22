@@ -136,6 +136,8 @@ h2 { margin-bottom: 0; font-size: clamp(1.65rem, 4vw, 2.6rem); letter-spacing: -
 .agenda-card.example { border-style: dashed; }
 .agenda-card strong, .agenda-card span { display: block; }
 .agenda-actions { display: flex; gap: 6px; margin-top: 8px; }
+.meeting-archive { margin-top: 24px; padding-top: 16px; border-top: 2px solid var(--ink); }
+.archive-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .meeting-form { padding: 20px; border: 2px solid var(--ink); background: var(--card); }
 .meeting-form input, .meeting-form textarea {
   width: 100%;
@@ -232,32 +234,8 @@ select:focus, textarea:focus, button:focus-visible, input:focus-visible {
 }
 .mode-row label { margin: 0; }
 .mode-row .muted { min-height: auto; margin: 0; }
-.ai-switch { display: flex; align-items: center; gap: 12px; cursor: pointer; }
-.ai-switch input { position: absolute; opacity: 0; }
-.switch-track {
-  position: relative;
-  width: 54px;
-  height: 30px;
-  flex: 0 0 auto;
-  border: 2px solid var(--ink);
-  border-radius: 20px;
-  background: var(--line);
-}
-.switch-track::after {
-  content: "";
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--ink);
-  transition: .2s;
-}
-.ai-switch input:checked + .switch-track { background: var(--lime); }
-.ai-switch input:checked + .switch-track::after { transform: translateX(24px); }
-.ai-switch input:disabled + .switch-track { opacity: .45; }
-.ai-switch small { display: block; }
+.ai-trust-badge { padding: 12px; border: 2px solid var(--blue); background: #e8eeff; }
+.ai-trust-badge strong, .ai-trust-badge small { display: block; }
 .advanced-note { font-size: .86rem; }
 .speaker-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .speaker-option input { position: absolute; opacity: 0; }
@@ -347,7 +325,20 @@ select:focus, textarea:focus, button:focus-visible, input:focus-visible {
 .executive-summary h3 { margin-bottom: 8px; font-size: 1.7rem; }
 .executive-headline { font-size: 1.28rem; font-weight: 800; }
 .summary-columns { display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px; }
+.coverage-strip { display: flex; flex-wrap: wrap; gap: 10px; margin: 18px 0; }
+.coverage-strip span { padding: 8px 12px; border: 1px solid var(--ink); background: #f2f5ff; font-size: .8rem; }
+.coverage-strip strong { margin-right: 6px; font-size: 1.2rem; }
 .rai-note { margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: .86rem; }
+.agent-proof {
+  display: grid;
+  grid-template-columns: 1.25fr repeat(3, 1fr);
+  gap: 2px;
+  margin: -18px 0 42px;
+  border: 2px solid var(--ink);
+  background: var(--ink);
+}
+.agent-proof > * { padding: 12px; background: var(--card); }
+.agent-proof strong, .agent-proof small { display: block; }
 .stakeholder { margin-bottom: 26px; padding: 28px; border: 3px solid var(--ink); background: var(--card); box-shadow: 4px 4px 0 var(--line); }
 .stakeholder-header { display: flex; align-items: center; gap: 12px; }
 .stakeholder-header h4 { margin: 0; font-size: 1.35rem; }
@@ -362,11 +353,23 @@ select:focus, textarea:focus, button:focus-visible, input:focus-visible {
 .action-table { width: 100%; border-collapse: collapse; background: var(--card); }
 .action-table th, .action-table td { padding: 13px; border: 1px solid var(--ink); text-align: left; vertical-align: top; }
 .action-table th { color: #fff; background: var(--ink); }
+.calendar-candidate, .history-opt-in {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0;
+  padding: 18px;
+  border: 2px solid var(--blue);
+  background: #e8eeff;
+}
+.calendar-candidate > div, .history-opt-in > div { flex: 1; }
+.calendar-candidate p, .history-opt-in p { margin-bottom: 0; }
+.status-chip { display: inline-block; padding: 3px 8px; border: 1px solid var(--ink); font-size: .76rem; font-weight: 900; }
 
 footer { padding: 32px max(24px, calc((100vw - 1180px) / 2)); color: #fff; background: var(--ink); }
 
 @media (max-width: 820px) {
-  .hero-grid, .input-grid, .identity-row, .split, .product-mode, .summary-columns, .calendar-layout { grid-template-columns: 1fr; }
+  .hero-grid, .input-grid, .identity-row, .split, .product-mode, .summary-columns, .calendar-layout, .agent-proof { grid-template-columns: 1fr; }
   .hero-grid { gap: 28px; padding: 60px 0 40px; }
   .sample-panel { border-right: 0; border-bottom: 2px solid var(--ink); }
   .pipeline { grid-template-columns: 1fr; gap: 10px; }

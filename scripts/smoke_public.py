@@ -70,7 +70,8 @@ def main() -> None:
         assert 'id="analyze"' in html
         assert 'id="consent"' in html
         assert 'id="calendar-grid"' in html
-        assert 'id="ai-deep-analysis"' in html
+        assert "실제 AI Agent 분석" in html
+        assert 'id="ai-deep-analysis"' not in html
         assert 'id="file-input"' in html
 
     health = request_json(f"{base_url}/health")
@@ -78,10 +79,29 @@ def main() -> None:
 
     samples = request_json(f"{base_url}/api/samples")
     assert len(samples) == 7
-    engine_modes = ["demo"]
     runtime = request_json(f"{base_url}/api/runtime")
-    if "--live" in sys.argv and runtime["live_available"]:
-        engine_modes.append("live")
+    assert runtime["default_mode"] == "live"
+    sample_for_rejection = samples[0]
+    demo_request = urllib.request.Request(
+        f"{base_url}/api/analyze",
+        data=json.dumps(
+            {
+                "transcript": sample_for_rejection["transcript"],
+                "self_speaker": sample_for_rejection["recommended_self"],
+                "product_mode": sample_for_rejection["product_mode"],
+                "mode": "demo",
+                "consent_confirmed": True,
+            }
+        ).encode(),
+        method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        urllib.request.urlopen(demo_request, timeout=30)
+        raise AssertionError("Public demo request unexpectedly succeeded")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 403
+    engine_modes = ["live"] if "--live" in sys.argv else []
     for product_mode in ("meeting-insight", "presentation-coach"):
         sample = next(
             item for item in samples if item["product_mode"] == product_mode
@@ -99,6 +119,7 @@ def main() -> None:
                 },
             )
             assert result["mode"] == engine_mode
+            assert result["mode_label"].startswith("AI 심층 분석")
             assert len(result["pipeline"]) == 3
             assert result["executive_summary"]["headline"]
             if product_mode == "meeting-insight":

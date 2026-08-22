@@ -8,9 +8,9 @@ Meeting Mirror has two evidence-first modes: **발표 개선** for structure, cl
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-009688)](https://fastapi.tiangolo.com/)
 [![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft-Agent_Framework-e14c2a)](https://github.com/microsoft/agent-framework)
 
-## Demo
+## Public app
 
-No login is required. Upload TXT/MD/PDF/DOCX, paste text, or open **예시로 체험하기**; select your speaker, confirm consent, and run the three-agent pipeline. The **빠른 기본 분석** path is rule-based and always available without credentials. The **AI 심층 분석** switch runs the real MAF + Copilot SDK route when the server reports it ready; the current Azure deployment is configured.
+No login is required. Upload TXT/MD/PDF/DOCX, paste text, or open **예시로 체험하기**; select your speaker, confirm consent, and run the real three-agent pipeline. Production is AI-only and blocks analysis if the server-side Azure model is unavailable.
 
 Meeting Mirror never treats a model’s interpretation as hidden truth. Explicit statements are separate from hypotheses, and every hypothesis includes evidence, confidence, and a question to verify with that person.
 
@@ -22,10 +22,10 @@ flowchart LR
   API --> MAF[Agent Framework workflow]
   MAF --> A[SelfCoachAgent] --> B[StakeholderAgent] --> C[ActionPlannerAgent]
   A & B & C --> SDK[GitHub Copilot SDK BYOK]
-  API --> Demo[Credential-free deterministic path]
+  API --> Router[Typed product-mode router]
 ```
 
-The real path uses `agent-framework-github-copilot==1.0.3`, an Agent Framework `WorkflowBuilder`, and three `GitHubCopilotAgent` instances. Copilot SDK BYOK targets Azure OpenAI or a Microsoft Foundry-compatible endpoint. The public judge path is deterministic and visibly labeled.
+The app uses `agent-framework-github-copilot==1.0.3`, Agent Framework `WorkflowBuilder`, and six specialized `GitHubCopilotAgent` roles. A typed product-mode router selects exactly one disjoint three-agent team. This is **모드 라우팅 기반 Agentic MoE**, not a model-level mixture-of-experts claim.
 
 The page also includes an on-device meeting calendar backed by IndexedDB. Its seeded examples and user-saved metadata stay in that browser. Transcript/result persistence is opt-in and off by default. ICS export includes schedule metadata but never the transcript or inferred stakeholder details.
 
@@ -37,7 +37,7 @@ python -m venv .venv
 .\.venv\Scripts\uvicorn.exe app.main:app --reload
 ```
 
-Open <http://127.0.0.1:8000>. Demo mode needs no environment variables.
+Open <http://127.0.0.1:8000>. Live analysis requires the server-side BYOK variables below. Developers can explicitly enable the rule-based test fixture with `ALLOW_DEMO_MODE=true`; production does not set it.
 
 For live mode, copy `.env.example` values into the process environment. Never commit the key:
 
@@ -68,7 +68,7 @@ azd auth login
 azd up --no-prompt
 ```
 
-For live mode, add `BYOK_API_KEY` as a Container Apps secret and set the other BYOK environment variables after provisioning. Without them the service defaults to the complete deterministic demo.
+Add `BYOK_API_KEY` as a Container Apps secret and set the other BYOK environment variables after provisioning. Without them the Analyze CTA is blocked; there is no silent fallback.
 
 When ACR Tasks are disabled by subscription policy, dispatch `.github/workflows/deploy.yml`. It builds the same Dockerfile on a GitHub-hosted runner and deploys the SHA-tagged image to the already provisioned Container App using Azure OIDC.
 
@@ -84,7 +84,7 @@ See [PRD.md](PRD.md) for acceptance criteria, [TRD.md](TRD.md) for precise SDK/d
 - [ ] Repository URL starts with `https://github.com/<issue-author>/`.
 - [ ] Submitted commit SHA exists on the remote and contains root `PRD.md` and `TRD.md`.
 - [ ] Deployment URL is the raw public `https://*.azurecontainerapps.io` hostname.
-- [ ] Root, health, samples, and one full demo analysis pass `python scripts/smoke_public.py <URL>` without credentials.
+- [ ] Root, health, samples, uploads, calendar, and both live modes pass `python scripts/smoke_public.py <URL> --live` without user credentials.
 - [ ] All submission acknowledgements are checked; no more than two submissions are filed, and the latest is intended for judging.
 
 Do not submit automatically. Confirm every item against the exact remote SHA and public URL first.

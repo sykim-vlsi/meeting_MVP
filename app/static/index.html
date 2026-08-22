@@ -75,6 +75,10 @@
               <div class="weekday-row" aria-hidden="true"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
               <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="미팅 날짜 선택"></div>
               <div id="day-agenda" class="day-agenda" aria-live="polite"></div>
+              <div class="meeting-archive">
+                <h4>이전 회의록</h4>
+                <div id="meeting-archive-list"></div>
+              </div>
             </div>
             <form id="meeting-form" class="meeting-form">
               <input id="meeting-id" type="hidden">
@@ -89,7 +93,7 @@
               </div>
               <label>장소<input id="event-location" type="text" maxlength="160" placeholder="예: 온라인 / 회의실 A"></label>
               <label>목적<textarea id="event-purpose" maxlength="300" rows="2" placeholder="예: 고객 피드백 반영 범위 결정"></textarea></label>
-              <label class="local-save-option"><input id="save-content-local" type="checkbox"> 대화록과 분석 결과도 이 브라우저에 저장 (기본 꺼짐)</label>
+              <label class="local-save-option"><input id="save-content-local" type="checkbox"> 이 회의를 이전 회의록에 저장 (대화록·분석 포함, 기본 꺼짐)</label>
               <div class="queue-actions">
                 <button id="save-meeting" class="primary-button" type="submit">회의 저장</button>
                 <button id="new-meeting" class="text-button" type="button">새 일정</button>
@@ -171,22 +175,20 @@
           </label>
         </div>
         <div class="mode-row">
-          <label class="ai-switch">
-            <input id="ai-deep-analysis" type="checkbox" role="switch">
-            <span class="switch-track" aria-hidden="true"></span>
-            <span><strong>AI 심층 분석</strong><small>GitHub Copilot SDK + Microsoft Agent Framework</small></span>
-          </label>
+          <div class="ai-trust-badge"><strong>실제 AI Agent 분석</strong>
+            <small>GitHub Copilot SDK + Microsoft Agent Framework</small></div>
           <span><span id="runtime-status" class="muted">분석 상태 확인 중…</span>
-            <small>OFF = 빠르고 일정한 규칙 기반 기본 분석</small></span>
+            <small>선택한 모드의 전문 Agent 3개를 실행합니다.</small></span>
           <details class="advanced-note"><summary>분석 방식 자세히</summary>
-            AI 심층 분석은 서버에 Azure 모델이 설정된 경우 실제 세 에이전트를 실행합니다.
-            기본 분석은 LLM을 호출하지 않는 judge-safe 규칙 기반 경로입니다.
+            모드 라우팅 기반 Agentic MoE입니다. 하나의 모델 안에서 전문가가 섞이는 구조가 아니라,
+            모드에 따라 서로 다른 세 Agent와 계약을 선택합니다.
           </details>
         </div>
 
         <div id="error-box" class="error-box" role="alert" hidden></div>
         <div class="action-row">
-          <button id="analyze" class="primary-button" type="button">3-Agent 분석 시작 <span>→</span></button>
+          <button id="analyze" class="primary-button" type="button" disabled>전문가 Agent 분석 시작 <span>→</span></button>
+          <button id="cancel-analysis" class="secondary-button" type="button" hidden>분석 취소</button>
           <button id="reset" class="text-button" type="button">초기화</button>
         </div>
         <p class="privacy-note">
@@ -239,6 +241,12 @@
         </div>
         <div id="disclaimer" class="disclaimer"></div>
         <div id="results-content"></div>
+        <aside id="history-opt-in" class="history-opt-in" hidden>
+          <div><strong>이 분석을 이전 회의와 비교할 수 있도록 이 브라우저에 저장할까요?</strong>
+            <p>동의할 때만 대화록과 결과가 이 기기의 IndexedDB에 저장됩니다.</p></div>
+          <button id="save-analysis-local" class="primary-button" type="button">이 브라우저에 저장</button>
+          <button id="skip-analysis-save" class="text-button" type="button">나중에</button>
+        </aside>
       </section>
     </main>
 

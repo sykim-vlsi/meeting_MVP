@@ -29,7 +29,7 @@ In future moderated usability testing, target completion of post-meeting self-re
 - Include five polished Korean meeting samples and two Korean presentation samples.
 - Presentation mode analyzes observable structure, clarity, concision, evidence/examples, repeated wording, and question handling; it outputs rewritten phrases and a rehearsal checklist.
 - Provide bounded in-memory TXT/MD/PDF/DOCX extraction. Reject image-only PDFs with OCR guidance. MP3 is shown as Azure Speech-gated and never reports false success.
-- Default to live agents when BYOK is configured; otherwise use a clearly labeled deterministic demo. Users can explicitly choose either mode.
+- Production always invokes the selected live agent team. If server-side BYOK is unavailable, analysis is blocked with a clear Korean message; no silent fallback exists.
 - Self coaching includes strengths, specific improvements, quote/timestamp evidence, and next-meeting behaviors.
 - Every non-self speaker receives explicit requests, explicit concerns, possible-goal hypotheses, confidence, citations, and a confirmation question.
 - Action planning includes decisions, unresolved questions, owner/deadline/action items, evidence, and recommended follow-ups.
@@ -41,7 +41,7 @@ In future moderated usability testing, target completion of post-meeting self-re
 ## Nonfunctional requirements
 
 - Responsive at mobile and desktop widths and keyboard operable.
-- No login or third-party account for the public demo path.
+- No user login or third-party account is required for the public live-agent path.
 - No server database. Calendar persistence is browser-local IndexedDB; transcript/result storage is explicit opt-in.
 - Health endpoint at `/health`.
 - Input capped at 50,000 characters.
@@ -59,18 +59,18 @@ In future moderated usability testing, target completion of post-meeting self-re
 
 ## Acceptance criteria
 
-- An automated judge can load a sample, select a speaker, confirm consent, run all three stages, and see all required output without credentials.
+- An automated judge can load a sample, select a speaker, confirm consent, run all three live stages, and see all required output without user credentials.
 - Every included sample loads and parses in tests.
 - API responses validate against `AnalysisResponse`.
-- Live configuration selects the Agent Framework/Copilot SDK workflow rather than the deterministic implementation.
+- A typed `product_mode` router selects one of two disjoint three-agent Agent Framework/Copilot SDK workflows.
 - `/health` and the public root URL return HTTP 200 after deployment.
-- Both deterministic modes, TXT/PDF/DOCX fixture extraction, calendar metadata, and ICS generation pass against the public URL.
+- Both live modes, TXT/PDF/DOCX fixture extraction, calendar metadata, and ICS generation pass against the public URL.
 
 ## 심사 기준 대응표
 
 | Official weight | Implemented evidence |
 |---|---|
-| Copilot SDK + Microsoft Agent Framework · 25% | Real three-node `WorkflowBuilder` in `app/agents.py`; three `GitHubCopilotAgent` roles use Copilot SDK BYOK, pass validated context forward, and emit UI progress. Demo provenance is visibly different. |
+| Copilot SDK + Microsoft Agent Framework · 25% | Two three-node `WorkflowBuilder` graphs in `app/agents.py` and `app/presentation_agents.py`; six distinct roles use Copilot SDK BYOK, validated context handoff, Korean-only contracts, and visible progress. |
 | Productivity/problem fit · 18% | Personal coaching, stakeholder verification questions, owner/deadline/action output, copy/download, and the under-five-minute target above. |
 | Azure · 18% | Public HTTPS web app on Azure Container Apps, Bicep/azd assets, managed identity ACR pull, health probes, Log Analytics, and secretless deployment OIDC. |
 | Completeness · 16% | Golden paths for both modes, seven samples, document extraction, validation, SSE progress, errors, response contracts, timeout, unit/API/public smoke tests. |
@@ -80,8 +80,8 @@ In future moderated usability testing, target completion of post-meeting self-re
 
 ## Current limitations
 
-- The public deployment has a server-configured Azure model: AI 심층 분석 runs the real agent path, while the default-off fast rule-based path remains predictable and provenance is explicit.
-- Deterministic analysis uses language cues and is less nuanced than the live three-agent path.
+- The public deployment has a server-configured Azure model and exposes only the real agent path.
+- Rule-based analyzers exist only as explicitly enabled development/test fixtures and are rejected publicly.
 - Korean labeled text transcripts only; no audio, diarization, file upload, or external follow-up execution.
 
 ## Non-goals

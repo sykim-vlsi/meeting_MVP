@@ -8,8 +8,9 @@ The application is one FastAPI service. It serves the static browser client, JSO
 flowchart LR
     Browser[Responsive browser UI] -->|POST SSE| API[FastAPI]
     API --> Selector{Mode selector}
-    Selector -->|No BYOK / demo chosen| Demo[Deterministic analyzers]
-    Selector -->|BYOK configured| MAF[Agent Framework WorkflowBuilder]
+    Selector -->|meeting-insight| Meeting[Meeting WorkflowBuilder]
+    Selector -->|presentation-coach| Presentation[Presentation WorkflowBuilder]
+    Meeting & Presentation --> MAF[Selected 3-agent team]
     MAF --> Self[SelfCoachAgent]
     Self --> Stake[StakeholderAgent]
     Stake --> Plan[ActionPlannerAgent]
@@ -24,7 +25,7 @@ flowchart LR
 - `ProviderConfig` comes from pinned transitive package `github-copilot-sdk==1.0.2`. Its `type`, `base_url`, `api_key`, `wire_api`, and `model_id` route each Copilot session through BYOK.
 - Three independently instructed `GitHubCopilotAgent` instances execute inside a `WorkflowBuilder` graph: `self-coach → stakeholder → action-planner`.
 - Each node validates model JSON against Pydantic before passing its envelope to the next node.
-- `app/pipeline.py` selects live mode whenever all required BYOK variables exist and the request mode is `auto`. A configured live failure is returned as an error; it is never disguised as demo output.
+- `app/pipeline.py` routes `product_mode` to one of two disjoint contracts and requires live configuration in production. Demo requests require `ALLOW_DEMO_MODE=true`, which production does not set.
 - `app/presentation_agents.py` defines a distinct Structure → Clarity → Rehearsal workflow and validated presentation contract.
 - `app/extraction.py` performs bounded in-memory TXT/MD/PDF/DOCX extraction and an Azure Speech-gated MP3 path. It validates extension, MIME, and PDF/DOCX/MP3 signatures.
 
@@ -53,7 +54,7 @@ SSE events are JSON objects:
 
 ```json
 {"type":"progress","stage":"self-coach","status":"running","detail":"..."}
-{"type":"result","data":{"analysis_id":"...","mode":"demo"}}
+{"type":"result","data":{"analysis_id":"...","mode":"live"}}
 ```
 
 ## Azure topology
@@ -72,7 +73,7 @@ If a subscription disables ACR Tasks, `.github/workflows/deploy.yml` is the supp
 
 ## Secrets and configuration
 
-Demo mode has no secrets. Live mode requires these Container App environment variables:
+Live mode requires these Container App environment variables:
 
 | Variable | Meaning |
 |---|---|
@@ -108,7 +109,7 @@ python -m venv .venv
 .\.venv\Scripts\uvicorn.exe app.main:app --host 127.0.0.1 --port 8000
 ```
 
-For Azure, set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` only in the command process, then run `azd up --no-prompt`. The Azure CLI and azd identities must be logged in, and the principal needs subscription deployment plus ACR build permissions. Validate `/health`, `/api/samples`, and one demo analysis after deploy.
+For Azure, set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` only in the command process, then run `azd up --no-prompt`. Every feature-branch/main push runs Ruff and pytest first, then OIDC image build/deploy and public root/runtime/upload/calendar smoke. The stable FQDN remains while SHA-tagged revisions change.
 
 ## Automated-judge evidence map
 
@@ -117,13 +118,13 @@ For Azure, set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` only in the comman
 | MAF orchestration | `app/agents.py:run_live_pipeline`, three `@executor` nodes, `WorkflowBuilder.add_edge` | Named three-stage progress; prior context affects later output |
 | Copilot SDK | `_make_agent`, `GitHubCopilotOptions`, `ProviderConfig` | `/api/runtime` reports live availability; result provenance says Live |
 | Structured safety | `app/models.py`, model validation in every node | Separate explicit requests, hypotheses, confidence, quotes, confirmation question |
-| Judge fallback | `app/demo_analyzer.py`, `_demo_pipeline` | Same complete response contract without credentials, labeled Deterministic demo |
+| Production gate | `app/pipeline.py`, `/api/runtime` | Live only; unavailable configuration blocks instead of fabricating AI |
 | Browser UX | `app/static/index.html`, `app.js`, `styles.css` | Sample and speaker preselected; ordinary checkbox/button flow |
 | Azure | `azure.yaml`, `infra/`, `.github/workflows/deploy.yml` | Public HTTPS Container App with health probes and SHA-tagged image |
 | Tests | `tests/`, `scripts/smoke_public.py` | Parser/sample/API/SSE contracts and live public HTTP golden path |
 
 ## Deployment limitations
 
-The current public environment has a server-side Azure OpenAI BYOK secret, so the AI switch enables the real route. The key is an Azure Container Apps secret and never appears in source, output, or logs. Azure Speech is not configured, so MP3 returns a clear unavailable message; deterministic text/document flows remain complete. The production container includes Copilot CLI and Speech SDK so configured environments activate the real paths. MAF is Layer 1 and Container Apps/Bicep/azd are infrastructure; MCP and Aspire are intentionally absent because no justified remote-tool boundary requires them.
+The current public environment has a server-side Azure OpenAI BYOK secret and exposes only the real agent route. The key is a Container Apps secret and never appears in source, output, or logs. Azure Speech is not configured, so MP3 returns a clear unavailable message. Rule-based analyzers are gated to development/tests. MAF is Layer 1 and Container Apps/Bicep/azd are infrastructure; MCP and Aspire are intentionally absent because no justified remote-tool boundary requires them.
 
 Sanitized verification evidence: a local real Meeting Insight run completed SelfCoachAgent → StakeholderAgent → ActionPlannerAgent with typed summary/stakeholder/action output in 86.16 seconds. The checkpoint public image completed a real streaming meeting run in 55.6 seconds. Final deployment verification runs both real modes again and records only status, latency, stage names/count, and contract presence.

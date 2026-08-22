@@ -30,6 +30,17 @@ class FakeAgent:
         return SimpleNamespace(text=json.dumps(self.response, ensure_ascii=False))
 
 
+class SequenceFakeAgent(FakeAgent):
+    def __init__(self, responses: list[dict]):
+        self.responses = responses
+        self.calls = 0
+
+    async def run(self, _prompt: str):
+        response = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return SimpleNamespace(text=json.dumps(response, ensure_ascii=False))
+
+
 @pytest.mark.asyncio
 async def test_meeting_live_workflow_allows_no_progress_callback(monkeypatch) -> None:
     sample = next(item for item in load_samples() if item.id == "sprint-planning")
@@ -157,3 +168,133 @@ async def test_presentation_live_workflow_allows_no_progress_callback(
     assert result.mode == "live"
     assert len(result.pipeline) == 3
     assert result.presentation_coaching.next_presentation_checklist
+
+
+@pytest.mark.asyncio
+async def test_meeting_workflow_retries_english_generated_prose(monkeypatch) -> None:
+    sample = next(item for item in load_samples() if item.id == "sprint-planning")
+    turns = parse_transcript(sample.transcript)
+    coaching = analyze_self(turns, sample.recommended_self)
+    english = coaching.model_copy(deep=True)
+    english.summary = "This English explanation must trigger one bounded correction retry."
+    stakeholders = analyze_stakeholders(turns, sample.recommended_self)
+    plan = analyze_actions(turns)
+    self_agent = SequenceFakeAgent(
+        [english.model_dump(mode="json"), coaching.model_dump(mode="json")]
+    )
+    agents = {
+        "SelfCoachAgent": self_agent,
+        "StakeholderAgent": FakeAgent(
+            {"stakeholders": [item.model_dump(mode="json") for item in stakeholders]}
+        ),
+        "ActionPlannerAgent": FakeAgent(
+            {
+                "executive_summary": meeting_executive_summary(
+                    coaching, stakeholders, plan
+                ).model_dump(mode="json"),
+                "action_plan": plan.model_dump(mode="json"),
+            }
+        ),
+    }
+    monkeypatch.setattr(
+        meeting_agents,
+        "_make_agent",
+        lambda name, _instructions: agents[name],
+    )
+    request = AnalysisRequest(
+        transcript=sample.transcript,
+        self_speaker=sample.recommended_self,
+        mode="live",
+        consent_confirmed=True,
+    )
+
+    result = await meeting_agents.run_live_pipeline(turns, request, None)
+
+    assert self_agent.calls == 2
+    assert "분리해 분석" in result.self_coaching.summary
+
+
+@pytest.mark.asyncio
+async def test_presentation_workflow_retries_english_generated_prose(
+    monkeypatch,
+) -> None:
+    sample = next(item for item in load_samples() if item.id == "product-pitch")
+    turns = parse_transcript(sample.transcript)
+    coaching = analyze_presentation(turns, sample.recommended_self)
+    english_finding = coaching.strengths[0].model_copy(
+        update={
+            "observation": (
+                "This long English explanation should be rejected while its source quote is preserved."
+            )
+        }
+    )
+    structure_agent = SequenceFakeAgent(
+        [
+            {"findings": [english_finding.model_dump(mode="json")]},
+            {
+                "findings": [
+                    item.model_dump(mode="json") for item in coaching.strengths
+                ]
+            },
+        ]
+    )
+    agents = {
+        "PresentationStructureAgent": structure_agent,
+        "PresentationClarityAgent": FakeAgent(
+            {
+                "findings": [
+                    item.model_dump(mode="json") for item in coaching.improvements
+                ]
+            }
+        ),
+        "PresentationRehearsalAgent": FakeAgent(
+            {
+                "executive_summary": presentation_executive_summary(
+                    coaching
+                ).model_dump(mode="json"),
+                "presentation_coaching": coaching.model_dump(mode="json"),
+            }
+        ),
+    }
+    monkeypatch.setattr(
+        presentation_agents,
+        "_make_agent",
+        lambda name, _instructions: agents[name],
+    )
+    request = AnalysisRequest(
+        transcript=sample.transcript,
+        self_speaker=sample.recommended_self,
+        product_mode=ProductMode.PRESENTATION_COACH,
+        mode="live",
+        consent_confirmed=True,
+    )
+
+    await presentation_agents.run_live_presentation_pipeline(turns, request, None)
+
+    assert structure_agent.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_persistent_english_failure_is_explicit_and_quotes_are_excluded() -> None:
+    sample = next(item for item in load_samples() if item.id == "sprint-planning")
+    turns = parse_transcript(sample.transcript)
+    coaching = analyze_self(turns, sample.recommended_self)
+    coaching.strengths[0].evidence[0].quote = (
+        "This quoted source may remain in its original English language."
+    )
+    accepted = await meeting_agents._run_validated(
+        FakeAgent(coaching.model_dump(mode="json")),
+        "prompt",
+        type(coaching),
+        "SelfCoachAgent",
+    )
+    assert accepted.strengths[0].evidence[0].quote.startswith("This quoted")
+
+    english = coaching.model_copy(deep=True)
+    english.summary = "This persistent English report text must fail after exactly two attempts."
+    failing_agent = SequenceFakeAgent([english.model_dump(mode="json")])
+    with pytest.raises(meeting_agents.AgentOutputError, match="두 번 연속 한국어"):
+        await meeting_agents._run_validated(
+            failing_agent, "prompt", type(coaching), "SelfCoachAgent"
+        )
+    assert failing_agent.calls == 2

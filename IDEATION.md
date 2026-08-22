@@ -20,7 +20,7 @@ Most meeting summaries optimize organizational recall. They do not answer a pers
 - Other participants’ direct statements are separated from possible goals or concerns.
 - Every inference carries a quote, confidence, and confirmation question.
 - The three agents have distinct responsibilities and visible hand-offs.
-- A deterministic path makes the complete product demonstrable without credentials.
+- Production uses the real agent path without user credentials; deterministic analyzers remain test-only.
 
 ## Scope cuts
 
@@ -30,6 +30,6 @@ No server database, accounts, OAuth, calendar/email actions, live bot, sentiment
 
 - **Overclaiming intent:** label hypotheses; require evidence, confidence, and verification questions.
 - **Transcript exposure:** request-memory processing only; no transcript logging or persistence.
-- **Model unavailability:** deterministic demo mode remains explicit and fully functional.
+- **Model unavailability:** block analysis clearly; never mislabel deterministic output as AI.
 - **Malformed model output:** validate every agent response against Pydantic contracts and fail clearly.
 - **Deployment build constraints:** use `azd` ACR remote builds rather than local Docker.

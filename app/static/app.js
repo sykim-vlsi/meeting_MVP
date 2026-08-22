@@ -9,6 +9,7 @@ const state = {
   calendarMonth: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
   selectedDate: "",
   db: null,
+  analysisController: null,
 };
 const $ = (selector) => document.querySelector(selector);
 const escapeHtml = (value = "") => String(value)
@@ -19,6 +20,18 @@ const escapeHtml = (value = "") => String(value)
 const formatBytes = (bytes) => bytes < 1024 * 1024
   ? `${(bytes / 1024).toFixed(1)} KB`
   : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+const DISPLAY_LABELS = {
+  complete: "완료",
+  completed: "완료",
+  running: "실행 중",
+  failed: "실패",
+  needs_review: "확인 필요",
+  confirmation_needed: "확인 필요",
+  high: "높음",
+  medium: "중간",
+  low: "낮음",
+};
+const displayLabel = (value) => DISPLAY_LABELS[value] || value;
 
 const PIPELINES = {
   "meeting-insight": {
@@ -57,9 +70,9 @@ async function initialize() {
   state.samples = samples;
   state.fixtures = fixtures;
   $("#runtime-status").textContent = runtime.live_available
-    ? "AI 심층 분석을 사용할 수 있습니다."
-    : "AI 심층 분석 준비 중 — 현재는 빠른 기본 분석을 사용할 수 있습니다.";
-  $("#ai-deep-analysis").disabled = !runtime.live_available;
+    ? "AI 분석 준비 완료"
+    : "AI 심층 분석 준비 중 — 현재 분석을 시작할 수 없습니다.";
+  $("#analyze").disabled = !runtime.live_available;
   $("#speech-status").textContent = runtime.speech_available
     ? "Azure Speech가 준비되었습니다. MP3를 전사한 뒤 화자 라벨을 확인하세요."
     : "현재 Azure Speech 비밀 설정이 없어 MP3 전사는 사용할 수 없습니다.";
@@ -246,16 +259,24 @@ function listHtml(items) {
   return `<ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
-function executiveHtml(summary, modeLabel) {
+function executiveHtml(summary, modeLabel, metrics) {
   return `<section class="executive-summary" aria-labelledby="executive-title">
     <div class="label-row"><div><p class="kicker">EXECUTIVE FIRST</p><h3 id="executive-title">한눈에 보는 핵심</h3></div>
       <span class="badge">${escapeHtml(modeLabel)}</span></div>
     <p class="executive-headline">${escapeHtml(summary.headline)}</p>
+    <div class="coverage-strip">${metrics.map((metric) => `<span><strong>${metric.value}</strong>${escapeHtml(metric.label)}</span>`).join("")}</div>
     <div class="summary-columns">
       <div><strong>우선순위 인사이트</strong>${listHtml(summary.priority_insights)}</div>
       <div><strong>지금 할 일</strong>${listHtml(summary.immediate_actions)}</div>
     </div>
     <p class="rai-note">책임 있는 AI · ${escapeHtml(summary.responsible_ai_note)}</p>
+  </section>`;
+}
+
+function agentProofHtml(result) {
+  return `<section class="agent-proof" aria-label="실행된 AI 에이전트">
+    <div><strong>${escapeHtml(result.mode_label)}</strong><small>전문가 Agent 라우팅 · 실제 실행 결과</small></div>
+    ${result.pipeline.map((stage) => `<span><strong>${escapeHtml(stage.name)}</strong><small>${escapeHtml(displayLabel(stage.status))}</small></span>`).join("")}
   </section>`;
 }
 
@@ -391,6 +412,7 @@ function renderAgenda() {
         <span>상태: ${escapeHtml(meeting.status || "예정")}${meeting.example ? " · 예시" : ""}</span>
         <div class="agenda-actions">
           <button class="secondary-button load-meeting" data-id="${meeting.id}" type="button">불러오기/수정</button>
+          <button class="secondary-button toggle-meeting" data-id="${meeting.id}" type="button">${meeting.status === "확정" ? "후보로 변경" : "확정하기"}</button>
           <button class="text-button delete-meeting" data-id="${meeting.id}" type="button">삭제</button>
         </div>
       </article>`).join("")
@@ -399,6 +421,29 @@ function renderAgenda() {
     button.addEventListener("click", () => loadMeeting(button.dataset.id));
   });
   document.querySelectorAll(".delete-meeting").forEach((button) => {
+    button.addEventListener("click", () => deleteMeeting(button.dataset.id));
+  });
+  document.querySelectorAll(".toggle-meeting").forEach((button) => {
+    button.addEventListener("click", () => toggleMeetingStatus(button.dataset.id));
+  });
+  renderMeetingArchive();
+}
+
+function renderMeetingArchive() {
+  const archived = state.meetings
+    .filter((meeting) => meeting.transcript || meeting.analysis)
+    .sort((a, b) => `${b.date}${b.start_time}`.localeCompare(`${a.date}${a.start_time}`));
+  $("#meeting-archive-list").innerHTML = archived.length
+    ? archived.map((meeting) => `<div class="archive-row">
+        <span><strong>${escapeHtml(meeting.title)}</strong><br><small>${escapeHtml(meeting.date)} · ${escapeHtml(meeting.status)}</small></span>
+        <span><button class="text-button load-archive" data-id="${meeting.id}" type="button">열기</button>
+        <button class="text-button delete-meeting" data-id="${meeting.id}" type="button">삭제</button></span>
+      </div>`).join("")
+    : "<p class=\"muted\">저장에 동의한 회의 분석이 없습니다.</p>";
+  document.querySelectorAll(".load-archive").forEach((button) => {
+    button.addEventListener("click", () => loadMeeting(button.dataset.id));
+  });
+  document.querySelectorAll("#meeting-archive-list .delete-meeting").forEach((button) => {
     button.addEventListener("click", () => deleteMeeting(button.dataset.id));
   });
 }
@@ -423,30 +468,44 @@ function loadMeeting(id) {
   if (meeting.analysis) renderResults(meeting.analysis);
 }
 
+async function saveCurrentMeeting(includeContent, status = "후보") {
+  const schedule = getSchedule();
+  const existingId = $("#meeting-id").value;
+  const record = {
+    id: existingId || crypto.randomUUID(),
+    ...schedule,
+    status,
+    example: false,
+    source_label: "Meeting Mirror 분석",
+    transcript: includeContent ? $("#transcript").value : null,
+    analysis: includeContent ? state.result : null,
+    updated_at: new Date().toISOString(),
+  };
+  await dbOperation("readwrite", (store) => store.put(record));
+  state.meetings = await dbOperation("readonly", (store) => store.getAll());
+  state.selectedDate = schedule.date;
+  state.calendarMonth = new Date(`${schedule.date}T00:00:00`);
+  $("#meeting-id").value = record.id;
+  renderCalendar();
+  return record;
+}
+
 async function saveMeeting(event) {
   event.preventDefault();
   try {
-    const schedule = getSchedule();
-    const existingId = $("#meeting-id").value;
-    const saveContent = $("#save-content-local").checked;
-    const record = {
-      id: existingId || crypto.randomUUID(),
-      ...schedule,
-      status: state.result ? "분석 완료" : "예정",
-      example: false,
-      transcript: saveContent ? $("#transcript").value : null,
-      analysis: saveContent ? state.result : null,
-      updated_at: new Date().toISOString(),
-    };
-    await dbOperation("readwrite", (store) => store.put(record));
-    state.meetings = await dbOperation("readonly", (store) => store.getAll());
-    state.selectedDate = schedule.date;
-    state.calendarMonth = new Date(`${schedule.date}T00:00:00`);
-    $("#meeting-id").value = record.id;
-    renderCalendar();
+    await saveCurrentMeeting($("#save-content-local").checked);
   } catch (error) {
     showError(error.message);
   }
+}
+
+async function toggleMeetingStatus(id) {
+  const meeting = state.meetings.find((item) => item.id === id);
+  if (!meeting) return;
+  meeting.status = meeting.status === "확정" ? "후보" : "확정";
+  await dbOperation("readwrite", (store) => store.put(meeting));
+  state.meetings = await dbOperation("readonly", (store) => store.getAll());
+  renderCalendar();
 }
 
 async function deleteMeeting(id) {
@@ -489,7 +548,11 @@ function presentationFindingHtml(item, className) {
 function renderPresentationResults(result) {
   const coaching = result.presentation_coaching;
   $("#results-content").innerHTML = `
-    ${executiveHtml(result.executive_summary, result.mode_label)}
+    ${executiveHtml(result.executive_summary, result.mode_label, [
+      { value: coaching.strengths.length, label: "강점" },
+      { value: coaching.improvements.length, label: "개선점" },
+      { value: coaching.next_presentation_checklist.length, label: "체크리스트" },
+    ])}${agentProofHtml(result)}
     <section class="result-section">
       <h3>발표 코칭 · ${escapeHtml(coaching.speaker)}</h3>
       <p class="summary">${escapeHtml(coaching.overview)}</p>
@@ -508,7 +571,7 @@ function renderMeetingResults(result) {
       <div class="hypothesis">
         <span class="block-label">목적 가설 · 사실 아님</span>
         <p>${escapeHtml(hypothesis.possible_goal_or_concern)}</p>
-        <p><strong>확신도</strong> <span class="confidence">${escapeHtml(hypothesis.confidence)} · 텍스트 근거 기준</span></p>
+        <p><strong>확신도</strong> <span class="confidence">${escapeHtml(displayLabel(hypothesis.confidence))} · 텍스트 근거 기준</span></p>
         <div><strong>근거 발언</strong>${hypothesis.citations.map(citationHtml).join("")}</div>
         <p class="behavior"><strong>확인 질문</strong> → ${escapeHtml(hypothesis.confirmation_question)}</p>
       </div>`).join("");
@@ -526,9 +589,14 @@ function renderMeetingResults(result) {
   const actionRows = plan.action_items.map((item) => `
     <tr><td>${escapeHtml(item.owner)}</td><td>${escapeHtml(item.deadline)}</td>
     <td>${escapeHtml(item.action)}${item.evidence.map(citationHtml).join("")}</td>
-    <td>${escapeHtml(item.status)}</td></tr>`).join("");
+    <td>${escapeHtml(displayLabel(item.status))}</td></tr>`).join("");
   $("#results-content").innerHTML = `
-    ${executiveHtml(result.executive_summary, result.mode_label)}
+    ${executiveHtml(result.executive_summary, result.mode_label, [
+      { value: result.stakeholders.length, label: "참여자" },
+      { value: plan.decisions.length, label: "결정" },
+      { value: plan.action_items.length, label: "실행 항목" },
+      { value: plan.unresolved_questions.length, label: "미해결" },
+    ])}${agentProofHtml(result)}
     <section class="result-section"><h3>나의 대화 코칭 · ${escapeHtml(self.speaker)}</h3>
       <p class="summary">${escapeHtml(self.summary)}</p>
       <div class="card-grid">
@@ -557,7 +625,27 @@ function renderResults(result) {
   $("#disclaimer").textContent = `⚠ ${result.disclaimer}`;
   if (result.product_mode === "presentation-coach") renderPresentationResults(result);
   else renderMeetingResults(result);
+  if (result.schedule) {
+    $("#results-content").insertAdjacentHTML("beforeend", `
+      <aside class="calendar-candidate">
+        <div><span class="status-chip">캘린더 후보</span>
+          <strong>${escapeHtml(result.schedule.title)}</strong>
+          <p>${escapeHtml(result.schedule.date)} ${escapeHtml(result.schedule.start_time)} · ${escapeHtml(result.schedule.location || "장소 미정")}</p>
+        </div>
+        <button id="add-calendar-candidate" class="primary-button" type="button">내 캘린더에 추가</button>
+      </aside>`);
+    $("#add-calendar-candidate").addEventListener("click", async (event) => {
+      try {
+        await saveCurrentMeeting(false, "후보");
+        event.target.textContent = "추가됨";
+        event.target.disabled = true;
+      } catch (error) {
+        showError(error.message);
+      }
+    });
+  }
   $("#download-calendar").hidden = !result.schedule;
+  $("#history-opt-in").hidden = false;
   $("#results").hidden = false;
   $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
@@ -572,6 +660,7 @@ function clearResults() {
   $("#results").hidden = true;
   $("#pipeline-section").hidden = true;
   $("#error-box").hidden = true;
+  $("#history-opt-in").hidden = true;
   resetPipeline();
 }
 
@@ -581,7 +670,9 @@ async function analyze() {
   if (!$("#consent").checked) return showError("분석 권한과 참여자 동의를 확인해 주세요.");
   if (!state.selectedSpeaker) return showError("본인 화자를 선택해 주세요.");
   const button = $("#analyze");
+  state.analysisController = new AbortController();
   button.disabled = true;
+  $("#cancel-analysis").hidden = false;
   button.firstChild.textContent = "분석 중 ";
   $("#pipeline-section").hidden = false;
   $("#results").hidden = true;
@@ -592,12 +683,13 @@ async function analyze() {
     const response = await fetch("/api/analyze/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: state.analysisController.signal,
       body: JSON.stringify({
         transcript: $("#transcript").value,
         self_speaker: state.selectedSpeaker,
         product_mode: state.productMode,
         schedule,
-        mode: $("#ai-deep-analysis").checked ? "live" : "demo",
+        mode: "live",
         consent_confirmed: true,
       }),
     });
@@ -623,11 +715,13 @@ async function analyze() {
       }
     }
   } catch (error) {
-    showError(error.message);
+    showError(error.name === "AbortError" ? "분석을 취소했습니다. 다시 시작할 수 있습니다." : error.message);
     $("#pipeline-section").hidden = true;
   } finally {
     button.disabled = false;
-    button.firstChild.textContent = "3-Agent 분석 시작 ";
+    $("#cancel-analysis").hidden = true;
+    state.analysisController = null;
+    button.firstChild.textContent = "전문가 Agent 분석 시작 ";
   }
 }
 
@@ -686,6 +780,26 @@ $("#clear-meetings").addEventListener("click", async () => {
   state.meetings = [];
   renderCalendar();
 });
+$("#save-analysis-local").addEventListener("click", async () => {
+  try {
+    if (!$("#event-title").value.trim()) {
+      const now = new Date();
+      $("#event-title").value = state.productMode === "presentation-coach"
+        ? "발표 코칭 기록"
+        : "회의 분석 기록";
+      $("#event-date").value = dateKey(now);
+      $("#event-time").value = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+    }
+    $("#save-content-local").checked = true;
+    await saveCurrentMeeting(true, "확정");
+    $("#history-opt-in").hidden = true;
+  } catch (error) {
+    showError(error.message);
+  }
+});
+$("#skip-analysis-save").addEventListener("click", () => {
+  $("#history-opt-in").hidden = true;
+});
 const dropZone = $("#drop-zone");
 ["dragenter", "dragover"].forEach((name) => dropZone.addEventListener(name, (event) => {
   event.preventDefault(); dropZone.classList.add("dragging");
@@ -698,6 +812,7 @@ dropZone.addEventListener("keydown", (event) => {
   if (event.key === "Enter" || event.key === " ") $("#file-input").click();
 });
 $("#analyze").addEventListener("click", analyze);
+$("#cancel-analysis").addEventListener("click", () => state.analysisController?.abort());
 $("#reset").addEventListener("click", () => {
   $("#transcript").value = "";
   $("#consent").checked = false;

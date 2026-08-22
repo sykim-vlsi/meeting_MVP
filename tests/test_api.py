@@ -72,6 +72,27 @@ def test_presentation_demo_has_distinct_contract() -> None:
     assert result.executive_summary.immediate_actions
 
 
+def test_product_mode_router_uses_disjoint_agent_teams() -> None:
+    meeting = client.post("/api/analyze", json=demo_request()).json()
+    presentation = client.post(
+        "/api/analyze", json=demo_request("product-pitch")
+    ).json()
+
+    meeting_stages = {stage["name"] for stage in meeting["pipeline"]}
+    presentation_stages = {stage["name"] for stage in presentation["pipeline"]}
+    assert meeting_stages == {
+        "SelfCoachAgent",
+        "StakeholderAgent",
+        "ActionPlannerAgent",
+    }
+    assert presentation_stages == {
+        "PresentationStructureAgent",
+        "PresentationClarityAgent",
+        "PresentationRehearsalAgent",
+    }
+    assert meeting_stages.isdisjoint(presentation_stages)
+
+
 def test_stream_emits_all_stages_and_result() -> None:
     response = client.post("/api/analyze/stream", json=demo_request())
 
@@ -100,3 +121,12 @@ def test_selected_speaker_must_exist() -> None:
     response = client.post("/api/analyze", json=payload)
 
     assert response.status_code == 422
+
+
+def test_demo_mode_is_rejected_when_not_explicitly_enabled(monkeypatch) -> None:
+    monkeypatch.delenv("ALLOW_DEMO_MODE")
+
+    response = client.post("/api/analyze", json=demo_request())
+
+    assert response.status_code == 403
+    assert "개발·테스트" in response.json()["detail"]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Annotated
 
@@ -11,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.agents import (
     AgentOutputError,
+    DemoModeDisabledError,
     LiveConfigurationError,
     live_is_configured,
 )
@@ -40,6 +42,21 @@ app = FastAPI(
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/fixtures", StaticFiles(directory=FIXTURES_DIR), name="fixtures")
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; frame-ancestors 'none'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    return response
 
 
 def validate_request(request: AnalysisRequest):
@@ -75,7 +92,8 @@ async def health() -> dict[str, str]:
 async def runtime() -> dict[str, str | bool]:
     return {
         "live_available": live_is_configured(),
-        "default_mode": "live" if live_is_configured() else "demo",
+        "default_mode": "live",
+        "demo_available": os.environ.get("ALLOW_DEMO_MODE", "").lower() == "true",
         "speech_available": speech_is_configured(),
     }
 
@@ -203,6 +221,8 @@ async def analyze(request: AnalysisRequest):
         return await run_pipeline(turns, request)
     except LiveConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DemoModeDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     except TimeoutError as exc:
         raise HTTPException(
             status_code=504,
