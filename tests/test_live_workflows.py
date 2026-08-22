@@ -275,7 +275,7 @@ async def test_presentation_workflow_retries_english_generated_prose(
 
 
 @pytest.mark.asyncio
-async def test_persistent_english_failure_is_explicit_and_quotes_are_excluded() -> None:
+async def test_persistent_english_is_nonfatal_and_quotes_are_excluded() -> None:
     sample = next(item for item in load_samples() if item.id == "sprint-planning")
     turns = parse_transcript(sample.transcript)
     coaching = analyze_self(turns, sample.recommended_self)
@@ -293,8 +293,8 @@ async def test_persistent_english_failure_is_explicit_and_quotes_are_excluded() 
     english = coaching.model_copy(deep=True)
     english.summary = "This persistent English report text must fail after exactly two attempts."
     failing_agent = SequenceFakeAgent([english.model_dump(mode="json")])
-    with pytest.raises(meeting_agents.AgentOutputError, match="두 번 연속 한국어"):
-        await meeting_agents._run_validated(
-            failing_agent, "prompt", type(coaching), "SelfCoachAgent"
-        )
+    recovered = await meeting_agents._run_validated(
+        failing_agent, "prompt", type(coaching), "SelfCoachAgent"
+    )
     assert failing_agent.calls == 2
+    assert recovered.summary.startswith("This persistent")

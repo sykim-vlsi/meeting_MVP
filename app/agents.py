@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 from collections.abc import Callable
@@ -62,8 +63,12 @@ LANGUAGE_EXCLUDED_FIELDS = {
     "confidence",
     "owner",
     "due_date",
+    "observed_cues",
+    "explicit_requests",
+    "concerns",
 }
 OutputT = TypeVar("OutputT", bound=BaseModel)
+logger = logging.getLogger("meeting_mirror.agents")
 
 
 def live_is_configured() -> bool:
@@ -157,6 +162,8 @@ async def _run_validated(
     validator: Callable[[OutputT], bool] | None = None,
 ) -> OutputT:
     last_error: Exception | None = None
+    best_schema_valid: OutputT | None = None
+    flagged_values: list[str] = []
     for attempt in range(2):
         correction = (
             ""
@@ -170,15 +177,27 @@ async def _run_validated(
         response = await agent.run(prompt + "\n" + KOREAN_LANGUAGE_CONTRACT + correction)
         try:
             output = output_type.model_validate(_extract_json(response.text))
-            if _english_dominant_values(output):
-                raise AgentOutputError("영어 중심 사용자용 문장이 감지되었습니다.")
             if validator and not validator(output):
                 raise AgentOutputError("응답의 필수 대상 범위가 누락되었습니다.")
+            flagged_values = _english_dominant_values(output)
+            if flagged_values:
+                best_schema_valid = output
+                last_error = AgentOutputError(
+                    "영어 중심 사용자용 문장이 감지되었습니다."
+                )
+                continue
             return output
         except (AgentOutputError, ValidationError) as exc:
             last_error = exc
+    if best_schema_valid is not None:
+        logger.warning(
+            "agent_language_contract_soft_failure agent=%s flagged_fields=%d",
+            agent_name,
+            len(flagged_values),
+        )
+        return best_schema_valid
     raise AgentOutputError(
-        f"{agent_name}가 두 번 연속 한국어 출력 계약을 충족하지 못했습니다."
+        f"{agent_name}가 두 번 연속 JSON 출력 계약을 충족하지 못했습니다."
     ) from last_error
 
 
@@ -279,10 +298,37 @@ async def run_live_pipeline(
             prompt,
             StakeholderOutput,
             "StakeholderAgent",
-            validator=lambda result: {
-                profile.speaker for profile in result.stakeholders
-            }
-            == expected,
+        )
+        profiles = {
+            profile.speaker: profile
+            for profile in output.stakeholders
+            if profile.speaker in expected
+        }
+        for missing_speaker in sorted(expected - profiles.keys()):
+            focused_prompt = (
+                f"다음 대화록에서 화자 {missing_speaker} 한 명만 분석하세요.\n"
+                f"본인 화자: {source['self_speaker']}\n"
+                f"대화록(JSON): {json.dumps(source['turns'], ensure_ascii=False)}\n"
+                f"반드시 stakeholders 배열에 {missing_speaker} 프로필 하나를 넣으세요.\n"
+                f"출력 JSON Schema: {stakeholder_schema}"
+            )
+            focused = await _run_validated(
+                stakeholder_agent,
+                focused_prompt,
+                StakeholderOutput,
+                f"StakeholderAgent({missing_speaker})",
+                validator=lambda result, speaker=missing_speaker: any(
+                    profile.speaker == speaker
+                    for profile in result.stakeholders
+                ),
+            )
+            profiles[missing_speaker] = next(
+                profile
+                for profile in focused.stakeholders
+                if profile.speaker == missing_speaker
+            )
+        output = StakeholderOutput(
+            stakeholders=[profiles[speaker] for speaker in sorted(expected)]
         )
         actual = {profile.speaker for profile in output.stakeholders}
         if actual != expected:
