@@ -24,6 +24,7 @@ from app.models import (
     StakeholderProfile,
     TranscriptTurn,
 )
+from app.summaries import meeting_executive_summary
 
 
 class LiveConfigurationError(RuntimeError):
@@ -402,6 +403,22 @@ async def run_live_pipeline(
     if not outputs:
         raise AgentOutputError("Agent Framework workflow returned no output.")
     payload = json.loads(outputs[-1])
+    self_coaching = SelfCoaching.model_validate(payload["self_coaching"])
+    stakeholders = [
+        StakeholderProfile.model_validate(item)
+        for item in payload["stakeholders"]
+    ]
+    action_plan = ActionPlan.model_validate(payload["action_plan"])
+    executive_summary = ExecutiveSummary.model_validate(
+        payload["executive_summary"]
+    )
+    if _english_dominant_values(executive_summary):
+        logger.warning(
+            "executive_summary_korean_template_applied product_mode=meeting-insight"
+        )
+        executive_summary = meeting_executive_summary(
+            self_coaching, stakeholders, action_plan, request.schedule
+        )
     return AnalysisResponse(
         analysis_id=os.urandom(16).hex(),
         mode="live",
@@ -427,15 +444,10 @@ async def run_live_pipeline(
                 detail="MAF workflow 종합 완료",
             ),
         ],
-        executive_summary=ExecutiveSummary.model_validate(
-            payload["executive_summary"]
-        ),
-        self_coaching=SelfCoaching.model_validate(payload["self_coaching"]),
-        stakeholders=[
-            StakeholderProfile.model_validate(item)
-            for item in payload["stakeholders"]
-        ],
-        action_plan=ActionPlan.model_validate(payload["action_plan"]),
+        executive_summary=executive_summary,
+        self_coaching=self_coaching,
+        stakeholders=stakeholders,
+        action_plan=action_plan,
         disclaimer=(
             "목표와 우려에 대한 가설은 사실이 아닙니다. 인용 근거와 확인 질문을 사용해 "
             "당사자에게 직접 확인하세요. 성격, 감정, 기만 여부 또는 민감한 특성을 추론하지 않습니다."

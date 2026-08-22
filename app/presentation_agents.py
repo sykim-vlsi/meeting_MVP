@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.agents import (
     KOREAN_LANGUAGE_CONTRACT,
     AgentOutputError,
+    _english_dominant_values,
     _make_agent,
     _run_validated,
 )
@@ -25,6 +26,7 @@ from app.models import (
     ProductMode,
     TranscriptTurn,
 )
+from app.summaries import presentation_executive_summary
 
 
 class PresentationPass(BaseModel):
@@ -192,6 +194,11 @@ async def run_live_presentation_pipeline(
     if not outputs:
         raise AgentOutputError("Presentation workflow returned no output.")
     synthesis = PresentationSynthesis.model_validate_json(outputs[-1])
+    executive_summary = synthesis.executive_summary
+    if _english_dominant_values(executive_summary):
+        executive_summary = presentation_executive_summary(
+            synthesis.presentation_coaching, request.schedule
+        )
     return PresentationAnalysisResponse(
         analysis_id=os.urandom(16).hex(),
         mode="live",
@@ -218,7 +225,7 @@ async def run_live_presentation_pipeline(
                 detail="리허설 계획 완료",
             ),
         ],
-        executive_summary=synthesis.executive_summary,
+        executive_summary=executive_summary,
         presentation_coaching=synthesis.presentation_coaching,
         disclaimer=(
             "이 평가는 대화록에 관찰되는 구조와 표현만 다룹니다. "

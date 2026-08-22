@@ -57,8 +57,29 @@ const PIPELINES = {
 };
 async function fetchJson(url) {
   const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url}을 불러오지 못했습니다.`);
-  return response.json();
+  return readApiResponse(response, `${url}을 불러오지 못했습니다.`);
+}
+
+async function readApiResponse(response, fallback) {
+  const contentType = response.headers.get("content-type") || "";
+  let body = null;
+  if (contentType.includes("application/json")) {
+    try {
+      body = await response.json();
+    } catch {
+      body = null;
+    }
+  } else if (response.ok) {
+    return response.text();
+  }
+  if (!response.ok) {
+    const detail = body && typeof body.detail === "string" ? body.detail : null;
+    throw new Error(detail || `${fallback} (HTTP ${response.status})`);
+  }
+  if (body === null) {
+    throw new Error(`서버 응답을 읽지 못했습니다. (HTTP ${response.status})`);
+  }
+  return body;
 }
 
 async function initialize() {
@@ -215,8 +236,10 @@ async function extractFiles() {
   state.files.forEach((file) => formData.append("files", file));
   try {
     const response = await fetch("/api/extract/batch", { method: "POST", body: formData });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.detail || "파일 추출에 실패했습니다.");
+    const body = await readApiResponse(
+      response,
+      "파일 추출 중 서버 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+    );
     for (const item of body.files) {
       statuses[item.filename] = item.status === "complete"
         ? { label: item.message, type: "" }
@@ -230,7 +253,7 @@ async function extractFiles() {
     }
     if (!body.successful_files) showError("추출에 성공한 파일이 없습니다.");
   } catch (error) {
-    showError(error.message);
+    showError(error.message, extractFiles);
   }
 }
 
@@ -647,12 +670,23 @@ function renderResults(result) {
   $("#download-calendar").hidden = !result.schedule;
   $("#history-opt-in").hidden = false;
   $("#results").hidden = false;
+  $("#results-title").tabIndex = -1;
+  $("#results-title").focus();
   $("#results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
-function showError(message) {
-  $("#error-box").textContent = message;
-  $("#error-box").hidden = false;
+function showError(message, retry = analyze) {
+  const box = $("#error-box");
+  box.textContent = message;
+  const retryButton = document.createElement("button");
+  retryButton.type = "button";
+  retryButton.className = "secondary-button";
+  retryButton.textContent = "다시 시도";
+  retryButton.addEventListener("click", retry);
+  box.append(retryButton);
+  box.hidden = false;
+  box.tabIndex = -1;
+  box.focus();
 }
 
 function clearResults() {
@@ -693,10 +727,10 @@ async function analyze() {
       body: JSON.stringify(payload),
       signal: state.analysisController.signal,
     });
-    const parseResult = await parseResponse.json();
-    if (!parseResponse.ok) {
-      throw new Error(parseResult.detail || "대화록 형식을 자동 정리하지 못했습니다.");
-    }
+    const parseResult = await readApiResponse(
+      parseResponse,
+      "대화록 형식을 자동 정리하지 못했습니다.",
+    );
     renderSpeakers(parseResult.speakers, state.selectedSpeaker);
     $("#normalization-notice").hidden = parseResult.normalized_lines === 0;
     if (parseResult.normalized_lines) {
@@ -710,8 +744,10 @@ async function analyze() {
       body: JSON.stringify(payload),
     });
     if (!response.ok) {
-      const body = await response.json();
-      throw new Error(body.detail || "분석 요청에 실패했습니다.");
+      await readApiResponse(
+        response,
+        "서버 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      );
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -724,7 +760,12 @@ async function analyze() {
       buffer = chunks.pop();
       for (const chunk of chunks) {
         if (!chunk.startsWith("data: ")) continue;
-        const event = JSON.parse(chunk.slice(6));
+        let event;
+        try {
+          event = JSON.parse(chunk.slice(6));
+        } catch {
+          throw new Error("분석 진행 응답을 읽지 못했습니다. 다시 시도해 주세요.");
+        }
         if (event.type === "progress") setStage(event.stage, event.status, event.detail);
         if (event.type === "heartbeat") {
           const running = document.querySelector(".agent-step.running small");
@@ -863,8 +904,10 @@ $("#download-calendar").addEventListener("click", async () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(getSchedule()),
     });
+    if (!response.ok) {
+      await readApiResponse(response, "캘린더 파일을 만들지 못했습니다.");
+    }
     const body = await response.blob();
-    if (!response.ok) throw new Error("캘린더 파일을 만들지 못했습니다.");
     const link = document.createElement("a");
     link.href = URL.createObjectURL(body);
     link.download = "meeting-mirror.ics";

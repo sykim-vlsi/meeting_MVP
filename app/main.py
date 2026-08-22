@@ -217,7 +217,7 @@ async def extract_batch(files: Annotated[list[UploadFile], File()]):
 
 
 @app.post("/api/parse")
-async def parse(request: AnalysisRequest) -> dict[str, list[str]]:
+async def parse(request: AnalysisRequest) -> dict[str, list[str] | int]:
     validate_request(request)
     turns, continuation_count = parse_transcript_with_metadata(
         request.transcript

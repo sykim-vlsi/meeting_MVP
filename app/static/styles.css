@@ -21,6 +21,8 @@ body {
 }
 button, textarea, select { font: inherit; }
 button { cursor: pointer; }
+.skip-link { position: absolute; left: 12px; top: -80px; z-index: 100; padding: 10px; color: #fff; background: var(--blue); }
+.skip-link:focus { top: 12px; }
 
 .hero {
   padding: 28px max(24px, calc((100vw - 1180px) / 2));
