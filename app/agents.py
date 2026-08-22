@@ -119,7 +119,11 @@ def _provider_options() -> GitHubCopilotOptions:
         ),
         "model_id": model_id,
     }
-    return GitHubCopilotOptions(model=model_id, provider=provider)
+    return GitHubCopilotOptions(
+        model=model_id,
+        provider=provider,
+        timeout=float(os.environ.get("LIVE_AGENT_TIMEOUT_SECONDS", "240")),
+    )
 
 
 def _make_agent(name: str, instructions: str) -> GitHubCopilotAgent:
@@ -263,7 +267,9 @@ async def run_live_pipeline(
     @executor(id="self-coach")
     async def self_coach_node(payload: str, ctx: WorkflowContext[str]) -> None:
         await emit(
-            "self-coach", "running", "Copilot SDK가 본인 발화를 근거 중심으로 분석합니다."
+            "self-coach",
+            "running",
+            "AI 전문가가 본인 발화를 분석 중입니다. 최대 4분 정도 걸릴 수 있습니다.",
         )
         source = json.loads(payload)
         prompt = (
@@ -388,7 +394,7 @@ async def run_live_pipeline(
         await stack.enter_async_context(self_agent)
         await stack.enter_async_context(stakeholder_agent)
         await stack.enter_async_context(action_agent)
-        timeout_seconds = float(os.environ.get("LIVE_AGENT_TIMEOUT_SECONDS", "120"))
+        timeout_seconds = float(os.environ.get("LIVE_AGENT_TIMEOUT_SECONDS", "240"))
         async with asyncio.timeout(timeout_seconds):
             workflow_result = await workflow.run(initial)
 

@@ -85,7 +85,7 @@ async def run_live_presentation_pipeline(
         await emit(
             "presentation-structure",
             "running",
-            "발표의 구조와 근거 흐름을 분석합니다.",
+            "AI 전문가가 발표 구조를 분석 중입니다. 최대 4분 정도 걸릴 수 있습니다.",
         )
         source = json.loads(payload)
         prompt = (
@@ -185,7 +185,7 @@ async def run_live_presentation_pipeline(
         await stack.enter_async_context(structure_agent)
         await stack.enter_async_context(clarity_agent)
         await stack.enter_async_context(rehearsal_agent)
-        timeout_seconds = float(os.environ.get("LIVE_AGENT_TIMEOUT_SECONDS", "120"))
+        timeout_seconds = float(os.environ.get("LIVE_AGENT_TIMEOUT_SECONDS", "240"))
         async with asyncio.timeout(timeout_seconds):
             result = await workflow.run(initial)
     outputs = result.get_outputs()

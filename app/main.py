@@ -32,7 +32,12 @@ from app.fixtures import FIXTURE_CATALOG, FIXTURES_DIR
 from app.models import AnalysisRequest, MeetingMetadata
 from app.pipeline import run_pipeline
 from app.samples import load_samples
-from app.transcript import TranscriptValidationError, get_speakers, parse_transcript
+from app.transcript import (
+    TranscriptValidationError,
+    get_speakers,
+    parse_transcript,
+    parse_transcript_with_metadata,
+)
 
 app = FastAPI(
     title="Meeting Mirror",
@@ -56,6 +61,9 @@ async def security_headers(request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=63072000; includeSubDomains"
+    )
     return response
 
 
@@ -210,8 +218,14 @@ async def extract_batch(files: Annotated[list[UploadFile], File()]):
 
 @app.post("/api/parse")
 async def parse(request: AnalysisRequest) -> dict[str, list[str]]:
-    turns = validate_request(request)
-    return {"speakers": get_speakers(turns)}
+    validate_request(request)
+    turns, continuation_count = parse_transcript_with_metadata(
+        request.transcript
+    )
+    return {
+        "speakers": get_speakers(turns),
+        "normalized_lines": continuation_count,
+    }
 
 
 @app.post("/api/analyze")
@@ -271,7 +285,21 @@ async def analyze_stream(request: AnalysisRequest) -> StreamingResponse:
         task = asyncio.create_task(execute())
         try:
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except TimeoutError:
+                    yield (
+                        "data: "
+                        + json.dumps(
+                            {
+                                "type": "heartbeat",
+                                "message": "AI 전문가가 분석 중입니다. 최대 4분 정도 걸릴 수 있습니다.",
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n\n"
+                    )
+                    continue
                 if event is None:
                     break
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"

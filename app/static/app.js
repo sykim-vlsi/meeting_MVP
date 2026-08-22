@@ -679,19 +679,35 @@ async function analyze() {
   resetPipeline();
   $("#pipeline-section").scrollIntoView({ behavior: "smooth", block: "start" });
   try {
-    const schedule = getSchedule();
+    const payload = {
+      transcript: $("#transcript").value,
+      self_speaker: state.selectedSpeaker,
+      product_mode: state.productMode,
+      schedule: getSchedule(),
+      mode: "live",
+      consent_confirmed: true,
+    };
+    const parseResponse = await fetch("/api/parse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: state.analysisController.signal,
+    });
+    const parseResult = await parseResponse.json();
+    if (!parseResponse.ok) {
+      throw new Error(parseResult.detail || "대화록 형식을 자동 정리하지 못했습니다.");
+    }
+    renderSpeakers(parseResult.speakers, state.selectedSpeaker);
+    $("#normalization-notice").hidden = parseResult.normalized_lines === 0;
+    if (parseResult.normalized_lines) {
+      $("#normalization-notice").textContent =
+        `${parseResult.normalized_lines}개 줄을 이전 발화에 이어 붙여 자동 정리했습니다.`;
+    }
     const response = await fetch("/api/analyze/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: state.analysisController.signal,
-      body: JSON.stringify({
-        transcript: $("#transcript").value,
-        self_speaker: state.selectedSpeaker,
-        product_mode: state.productMode,
-        schedule,
-        mode: "live",
-        consent_confirmed: true,
-      }),
+      body: JSON.stringify(payload),
     });
     if (!response.ok) {
       const body = await response.json();
@@ -710,6 +726,10 @@ async function analyze() {
         if (!chunk.startsWith("data: ")) continue;
         const event = JSON.parse(chunk.slice(6));
         if (event.type === "progress") setStage(event.stage, event.status, event.detail);
+        if (event.type === "heartbeat") {
+          const running = document.querySelector(".agent-step.running small");
+          if (running) running.textContent = event.message;
+        }
         if (event.type === "result") renderResults(event.data);
         if (event.type === "error") throw new Error(event.message);
       }
