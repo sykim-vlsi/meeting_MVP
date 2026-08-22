@@ -1,0 +1,1 @@
+"""Meeting Mirror application package."""

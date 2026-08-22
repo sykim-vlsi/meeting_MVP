@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: meeting-mirror
+metadata:
+  template: meeting-mirror@0.1.0
+services:
+  web:
+    project: .
+    language: py
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      remoteBuild: true

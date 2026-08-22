@@ -1,0 +1,65 @@
+name: Deploy to Azure Container Apps
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: meeting-mirror-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build and push image
+        env:
+          ACR_NAME: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          az acr login --name "$ACR_NAME"
+          docker build --tag "$ACR_NAME.azurecr.io/meeting-mirror/web:$IMAGE_TAG" .
+          docker push "$ACR_NAME.azurecr.io/meeting-mirror/web:$IMAGE_TAG"
+
+      - name: Deploy immutable image
+        env:
+          ACR_NAME: ${{ vars.AZURE_CONTAINER_REGISTRY_NAME }}
+          APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+          IMAGE_TAG: ${{ github.sha }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          az containerapp update \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$ACR_NAME.azurecr.io/meeting-mirror/web:$IMAGE_TAG"
+
+      - name: Public health check
+        env:
+          APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: |
+          FQDN=$(az containerapp show \
+            --name "$APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+          for attempt in {1..20}; do
+            if curl --fail --silent --show-error "https://$FQDN/health"; then
+              exit 0
+            fi
+            sleep 15
+          done
+          exit 1

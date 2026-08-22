@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="근거 중심 개인 회의 코치 Meeting Mirror">
+    <title>Meeting Mirror · Evidence-first meeting coach</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="hero">
+      <nav aria-label="주요 탐색">
+        <a class="brand" href="/">MEETING MIRROR</a>
+        <span class="badge">NO LOGIN · PRIVATE BY DESIGN</span>
+      </nav>
+      <div class="hero-grid">
+        <div>
+          <p class="eyebrow">말을 평가하지 않고, 다음 행동을 설계합니다.</p>
+          <h1>회의가 끝난 뒤<br><em>내 대화 습관</em>을 비춰보세요.</h1>
+        </div>
+        <p class="hero-copy">
+          선택한 화자의 발화만 코칭하고, 다른 참여자의 명시적 요구와
+          근거 기반 가설을 분리해 실행 가능한 후속 계획을 만듭니다.
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <section class="workspace" aria-labelledby="input-title">
+        <div class="section-heading">
+          <span>01</span>
+          <div>
+            <p class="kicker">INPUT</p>
+            <h2 id="input-title">대화록을 선택하거나 붙여넣으세요</h2>
+          </div>
+        </div>
+
+        <div class="input-grid">
+          <div class="sample-panel">
+            <label for="sample-select">데모 시나리오</label>
+            <select id="sample-select" aria-describedby="sample-description"></select>
+            <p id="sample-description" class="muted"></p>
+            <button id="load-sample" class="secondary-button" type="button">샘플 다시 불러오기</button>
+            <div class="format-note">
+              <strong>지원 형식</strong>
+              <code>[00:15] A: 발화 내용</code>
+              <code>B: 타임스탬프 없는 발화</code>
+            </div>
+          </div>
+          <div class="transcript-panel">
+            <div class="label-row">
+              <label for="transcript">회의 대화록</label>
+              <span id="character-count">0 / 50,000</span>
+            </div>
+            <textarea id="transcript" maxlength="50000" spellcheck="false"></textarea>
+          </div>
+        </div>
+
+        <div class="identity-row">
+          <div>
+            <span class="field-label">나는 어떤 화자인가요?</span>
+            <div id="speaker-options" class="speaker-options" role="radiogroup" aria-label="본인 화자"></div>
+          </div>
+          <label class="consent">
+            <input id="consent" type="checkbox">
+            <span>이 대화록을 분석할 권한과 참여자 동의를 확인했습니다.</span>
+          </label>
+        </div>
+        <div class="mode-row">
+          <label for="analysis-mode">분석 엔진</label>
+          <select id="analysis-mode">
+            <option value="auto">자동 · 설정 시 Live 우선</option>
+            <option value="demo">Deterministic demo · 항상 사용 가능</option>
+            <option value="live">Live agents · BYOK 설정 필요</option>
+          </select>
+          <span id="runtime-status" class="muted">런타임 확인 중…</span>
+        </div>
+
+        <div id="error-box" class="error-box" role="alert" hidden></div>
+        <div class="action-row">
+          <button id="analyze" class="primary-button" type="button">3-Agent 분석 시작 <span>→</span></button>
+          <button id="reset" class="text-button" type="button">초기화</button>
+        </div>
+        <p class="privacy-note">
+          대화록은 이 요청을 처리하는 동안 메모리에서만 사용되며 저장되지 않습니다.
+          비밀·민감 정보는 붙여넣지 마세요.
+        </p>
+      </section>
+
+      <section id="pipeline-section" class="pipeline-section" aria-labelledby="pipeline-title" hidden>
+        <div class="section-heading">
+          <span>02</span>
+          <div>
+            <p class="kicker">ORCHESTRATION</p>
+            <h2 id="pipeline-title">세 에이전트가 관점을 이어받습니다</h2>
+          </div>
+        </div>
+        <div class="pipeline" aria-live="polite">
+          <article class="agent-step" data-stage="self-coach">
+            <span class="step-number">1</span>
+            <div><h3>SelfCoachAgent</h3><p>나의 발화만 분리</p><small>대기 중</small></div>
+          </article>
+          <div class="connector" aria-hidden="true"></div>
+          <article class="agent-step" data-stage="stakeholder">
+            <span class="step-number">2</span>
+            <div><h3>StakeholderAgent</h3><p>요청과 가설 분리</p><small>대기 중</small></div>
+          </article>
+          <div class="connector" aria-hidden="true"></div>
+          <article class="agent-step" data-stage="action-planner">
+            <span class="step-number">3</span>
+            <div><h3>ActionPlannerAgent</h3><p>후속 행동 종합</p><small>대기 중</small></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="results" class="results" aria-labelledby="results-title" hidden>
+        <div class="results-header">
+          <div class="section-heading">
+            <span>03</span>
+            <div>
+              <p class="kicker">YOUR MIRROR</p>
+              <h2 id="results-title">다음 회의를 위한 리포트</h2>
+            </div>
+          </div>
+          <div class="result-actions">
+            <span id="mode-badge" class="badge"></span>
+            <button id="copy-result" class="secondary-button" type="button">결과 복사</button>
+            <button id="download-result" class="secondary-button" type="button">JSON 다운로드</button>
+          </div>
+        </div>
+        <div id="disclaimer" class="disclaimer"></div>
+        <div id="results-content"></div>
+      </section>
+    </main>
+
+    <footer>
+      <strong>Meeting Mirror</strong>
+      <span>근거는 보여주고, 가설은 확인합니다.</span>
+    </footer>
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>
