@@ -29,6 +29,7 @@ def citation(turn: TranscriptTurn) -> Citation:
         speaker=turn.speaker,
         quote=turn.text[:180],
         timestamp=turn.timestamp,
+        source=turn.source,
     )
 
 
@@ -152,6 +153,7 @@ def analyze_stakeholders(
         profiles.append(
             StakeholderProfile(
                 speaker=speaker,
+                core_perspective=possible_goal,
                 explicit_requests=explicit_requests,
                 concerns=concerns,
                 hypotheses=[

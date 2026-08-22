@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
+    <a class="skip-link" href="#input-title">본문으로 건너뛰기</a>
     <header class="hero">
       <nav aria-label="주요 탐색">
         <a class="brand" href="/">MEETING MIRROR</a>
@@ -35,30 +36,138 @@
           </div>
         </div>
 
-        <div class="input-grid">
-          <div class="sample-panel">
-            <label for="sample-select">데모 시나리오</label>
+        <fieldset class="product-mode" aria-label="분석 목적">
+          <legend>무엇을 개선하고 싶나요?</legend>
+          <label class="mode-card">
+            <input type="radio" name="product-mode" value="meeting-insight" checked>
+            <span>
+              <strong>회의 맥락·참여자 목적 분석</strong>
+              <small>나의 대화 코칭 · 명시적 요구와 목적 가설 · 실행 계획</small>
+            </span>
+          </label>
+          <label class="mode-card">
+            <input type="radio" name="product-mode" value="presentation-coach">
+            <span>
+              <strong>발표 개선 모드</strong>
+              <small>구조 · 명료성 · 근거 · 반복 표현 · Q&amp;A · 리허설</small>
+            </span>
+          </label>
+        </fieldset>
+        <p id="mode-helper" class="mode-helper">
+          회의에서 내가 어떻게 말했는지와 다른 참여자가 명시적으로 요청한 내용을 구분해 봅니다.
+        </p>
+
+        <section class="calendar-dashboard" aria-labelledby="schedule-title">
+          <div class="calendar-heading">
+            <div>
+              <p class="kicker">LOCAL MEETING CALENDAR</p>
+              <h3 id="schedule-title">미팅 캘린더</h3>
+              <p>일정은 <strong>이 브라우저의 IndexedDB에만 저장</strong>됩니다. 서버 계정이나 공유 데이터베이스가 아닙니다.</p>
+            </div>
+            <button id="clear-meetings" class="text-button" type="button">로컬 일정 모두 지우기</button>
+          </div>
+          <div class="calendar-layout">
+            <div>
+              <div class="calendar-nav">
+                <button id="prev-month" class="secondary-button" type="button" aria-label="이전 달">←</button>
+                <strong id="calendar-month"></strong>
+                <button id="next-month" class="secondary-button" type="button" aria-label="다음 달">→</button>
+              </div>
+              <div class="weekday-row" aria-hidden="true"><span>일</span><span>월</span><span>화</span><span>수</span><span>목</span><span>금</span><span>토</span></div>
+              <div id="calendar-grid" class="calendar-grid" role="grid" aria-label="미팅 날짜 선택"></div>
+              <div id="day-agenda" class="day-agenda" aria-live="polite"></div>
+              <div class="meeting-archive">
+                <h4>이전 회의록</h4>
+                <div id="meeting-archive-list"></div>
+              </div>
+            </div>
+            <form id="meeting-form" class="meeting-form">
+              <input id="meeting-id" type="hidden">
+              <label>제목<input id="event-title" type="text" maxlength="120" placeholder="예: 제품 데모 리허설"></label>
+              <div class="split">
+                <label>날짜<input id="event-date" type="date"></label>
+                <label>시작 시간<input id="event-time" type="time"></label>
+              </div>
+              <div class="split">
+                <label>시간(분)<input id="event-duration" type="number" min="5" max="480" value="60"></label>
+                <label>시간대<input id="event-timezone" type="text" maxlength="64" value="Asia/Seoul"></label>
+              </div>
+              <label>장소<input id="event-location" type="text" maxlength="160" placeholder="예: 온라인 / 회의실 A"></label>
+              <label>목적<textarea id="event-purpose" maxlength="300" rows="2" placeholder="예: 고객 피드백 반영 범위 결정"></textarea></label>
+              <label class="local-save-option"><input id="save-content-local" type="checkbox"> 이 회의를 이전 회의록에 저장 (대화록·분석 포함, 기본 꺼짐)</label>
+              <div class="queue-actions">
+                <button id="save-meeting" class="primary-button" type="submit">회의 저장</button>
+                <button id="new-meeting" class="text-button" type="button">새 일정</button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="upload-portal" aria-labelledby="upload-title">
+          <div>
+            <p class="kicker">YOUR FILES</p>
+            <h3 id="upload-title">실제 대화록·문서를 올리세요</h3>
+            <p>최대 5개, 파일당 10MB·전체 25MB. TXT, MD, PDF, DOCX는 즉시 추출합니다. MP3는 Azure Speech가 설정된 경우에만 전사합니다.</p>
+          </div>
+          <div id="drop-zone" class="drop-zone" role="button" tabindex="0" aria-controls="file-input">
+            <strong>파일을 여기에 놓거나 찾아보기</strong>
+            <span>문서와 녹음 입력은 분석 전에 편집 가능한 대화록으로 변환됩니다.</span>
+            <button id="browse-files" class="secondary-button" type="button">파일 선택</button>
+            <input id="file-input" type="file" multiple accept=".txt,.md,.pdf,.docx,.mp3" hidden>
+          </div>
+          <a class="fixture-download-primary" href="/fixtures/meeting-sprint.txt" download>TXT 테스트 파일 다운로드</a>
+          <ul id="file-queue" class="file-queue" aria-live="polite"></ul>
+          <div class="queue-actions">
+            <button id="extract-files" class="primary-button" type="button" disabled>선택 파일 추출</button>
+            <button id="clear-files" class="text-button" type="button">모두 지우기</button>
+          </div>
+        </section>
+
+        <section class="fixture-lab" aria-labelledby="fixture-title">
+          <div>
+            <p class="kicker">TEST FILE LAB</p>
+            <h3 id="fixture-title">테스트 파일</h3>
+            <p>직접 만든 안전한 파일로 업로드·추출 동작을 바로 확인하세요.</p>
+          </div>
+          <div id="fixture-list" class="fixture-list"></div>
+          <div class="audio-gate">
+            <strong>MP3 음성 전사</strong>
+            <span id="speech-status">Azure Speech 설정을 확인하는 중입니다.</span>
+          </div>
+        </section>
+
+        <details class="sample-accordion">
+          <summary>예시로 체험하기 · 로그인/파일 없이 한 번에 데모</summary>
+          <div class="sample-controls">
+            <label for="sample-select">현재 모드의 예시</label>
             <select id="sample-select" aria-describedby="sample-description"></select>
             <p id="sample-description" class="muted"></p>
-            <button id="load-sample" class="secondary-button" type="button">샘플 다시 불러오기</button>
+            <button id="load-sample" class="secondary-button" type="button">이 예시 불러오기</button>
+          </div>
+        </details>
+
+        <div class="input-grid">
+          <div class="sample-panel">
             <div class="format-note">
-              <strong>지원 형식</strong>
+              <strong>화자 라벨 형식</strong>
               <code>[00:15] A: 발화 내용</code>
               <code>B: 타임스탬프 없는 발화</code>
+              <p>파일에서 추출한 내용도 아래에서 반드시 확인·편집하고 본인 화자를 선택하세요.</p>
             </div>
           </div>
           <div class="transcript-panel">
             <div class="label-row">
-              <label for="transcript">회의 대화록</label>
+              <label for="transcript">편집 가능한 대화록 미리보기</label>
               <span id="character-count">0 / 50,000</span>
             </div>
-            <textarea id="transcript" maxlength="50000" spellcheck="false"></textarea>
+            <textarea id="transcript" maxlength="50000" spellcheck="false"
+              placeholder="[00:00] A: 발화 내용을 붙여넣거나 파일을 추출하세요."></textarea>
           </div>
         </div>
 
         <div class="identity-row">
           <div>
-            <span class="field-label">나는 어떤 화자인가요?</span>
+            <span id="speaker-label" class="field-label">나는 어떤 화자인가요?</span>
             <div id="speaker-options" class="speaker-options" role="radiogroup" aria-label="본인 화자"></div>
           </div>
           <label class="consent">
@@ -67,20 +176,24 @@
           </label>
         </div>
         <div class="mode-row">
-          <label for="analysis-mode">분석 엔진</label>
-          <select id="analysis-mode">
-            <option value="auto">자동 · 설정 시 Live 우선</option>
-            <option value="demo">Deterministic demo · 항상 사용 가능</option>
-            <option value="live">Live agents · BYOK 설정 필요</option>
-          </select>
-          <span id="runtime-status" class="muted">런타임 확인 중…</span>
+          <div class="ai-trust-badge"><strong>실제 AI Agent 분석</strong>
+            <small>GitHub Copilot SDK + Microsoft Agent Framework</small></div>
+          <span><span id="runtime-status" class="muted">분석 상태 확인 중…</span>
+            <small>선택한 모드의 전문 Agent 3개를 실행합니다.</small></span>
+          <details class="advanced-note"><summary>분석 방식 자세히</summary>
+            모드 라우팅 기반 Agentic MoE입니다. 하나의 모델 안에서 전문가가 섞이는 구조가 아니라,
+            모드에 따라 서로 다른 세 Agent와 계약을 선택합니다.
+          </details>
         </div>
 
         <div id="error-box" class="error-box" role="alert" hidden></div>
+        <div id="normalization-notice" class="disclaimer" role="status" hidden></div>
         <div class="action-row">
-          <button id="analyze" class="primary-button" type="button">3-Agent 분석 시작 <span>→</span></button>
+          <button id="analyze" class="primary-button" type="button" disabled>전문가 Agent 분석 시작 <span>→</span></button>
+          <button id="cancel-analysis" class="secondary-button" type="button" hidden>분석 취소</button>
           <button id="reset" class="text-button" type="button">초기화</button>
         </div>
+        <p class="privacy-note"><strong>예상 소요 시간: 약 40~120초, 최대 4분</strong> · 진행 중에도 연결을 유지합니다.</p>
         <p class="privacy-note">
           대화록은 이 요청을 처리하는 동안 메모리에서만 사용되며 저장되지 않습니다.
           비밀·민감 정보는 붙여넣지 마세요.
@@ -119,17 +232,24 @@
             <span>03</span>
             <div>
               <p class="kicker">YOUR MIRROR</p>
-              <h2 id="results-title">다음 회의를 위한 리포트</h2>
+              <h2 id="results-title">다음 행동을 위한 리포트</h2>
             </div>
           </div>
           <div class="result-actions">
             <span id="mode-badge" class="badge"></span>
             <button id="copy-result" class="secondary-button" type="button">결과 복사</button>
             <button id="download-result" class="secondary-button" type="button">JSON 다운로드</button>
+            <button id="download-calendar" class="secondary-button" type="button" hidden>캘린더에 추가 (.ics)</button>
           </div>
         </div>
         <div id="disclaimer" class="disclaimer"></div>
         <div id="results-content"></div>
+        <aside id="history-opt-in" class="history-opt-in" hidden>
+          <div><strong>이 분석을 이전 회의와 비교할 수 있도록 이 브라우저에 저장할까요?</strong>
+            <p>동의할 때만 대화록과 결과가 이 기기의 IndexedDB에 저장됩니다.</p></div>
+          <button id="save-analysis-local" class="primary-button" type="button">이 브라우저에 저장</button>
+          <button id="skip-analysis-save" class="text-button" type="button">나중에</button>
+        </aside>
       </section>
     </main>
 

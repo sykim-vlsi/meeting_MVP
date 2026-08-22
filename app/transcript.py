@@ -5,9 +5,10 @@ import re
 from app.models import TranscriptTurn
 
 TIMESTAMPED_LINE = re.compile(
-    r"^\s*(?:\[(?P<bracket_time>\d{1,2}:\d{2}(?::\d{2})?)\]|"
+    r"^\s*(?:(?:[-*•]\s*)|(?:\d+[.)]\s*))?"
+    r"(?:(?:\[|\()(?P<bracket_time>\d{1,2}:\d{2}(?::\d{2})?)(?:\]|\))|"
     r"(?P<plain_time>\d{1,2}:\d{2}(?::\d{2})?))?\s*"
-    r"(?P<speaker>[A-Za-z가-힣][A-Za-z0-9가-힣 _-]{0,29})\s*[:：]\s*"
+    r"(?P<speaker>[A-Za-z가-힣][A-Za-z0-9가-힣 _]{0,29}?)\s*[:：-]\s*"
     r"(?P<text>.+?)\s*$"
 )
 
@@ -16,22 +17,45 @@ class TranscriptValidationError(ValueError):
     pass
 
 
-def parse_transcript(transcript: str) -> list[TranscriptTurn]:
+def parse_transcript_with_metadata(
+    transcript: str,
+) -> tuple[list[TranscriptTurn], int]:
+    normalized_transcript = (
+        transcript.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+    )
     turns: list[TranscriptTurn] = []
     rejected: list[int] = []
+    current_source: str | None = None
+    continuation_count = 0
 
-    for line_number, raw_line in enumerate(transcript.splitlines(), start=1):
+    for line_number, raw_line in enumerate(
+        normalized_transcript.splitlines(), start=1
+    ):
         if not raw_line.strip():
+            continue
+        if raw_line.startswith("--- 파일:") and raw_line.rstrip().endswith("---"):
+            current_source = raw_line.removeprefix("--- 파일:").removesuffix("---").strip()
             continue
         match = TIMESTAMPED_LINE.match(raw_line)
         if not match:
-            rejected.append(line_number)
+            if turns:
+                previous = turns[-1]
+                turns[-1] = previous.model_copy(
+                    update={"text": f"{previous.text} {raw_line.strip()}"}
+                )
+                continuation_count += 1
+            else:
+                rejected.append(line_number)
             continue
         turns.append(
             TranscriptTurn(
                 speaker=match.group("speaker").strip(),
                 text=match.group("text").strip(),
                 timestamp=match.group("bracket_time") or match.group("plain_time"),
+                source=current_source,
             )
         )
 
@@ -45,6 +69,11 @@ def parse_transcript(transcript: str) -> list[TranscriptTurn]:
         raise TranscriptValidationError("분석하려면 최소 3개의 발화가 필요합니다.")
     if len({turn.speaker for turn in turns}) < 2:
         raise TranscriptValidationError("최소 2명의 화자가 필요합니다.")
+    return turns, continuation_count
+
+
+def parse_transcript(transcript: str) -> list[TranscriptTurn]:
+    turns, _ = parse_transcript_with_metadata(transcript)
     return turns
 
 

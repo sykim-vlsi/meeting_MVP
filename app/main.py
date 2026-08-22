@@ -2,17 +2,42 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.agents import LiveConfigurationError, live_is_configured
-from app.models import AnalysisRequest
+from app.agents import (
+    AgentOutputError,
+    DemoModeDisabledError,
+    LiveConfigurationError,
+    live_is_configured,
+)
+from app.calendar import CalendarError, build_ics
+from app.extraction import (
+    EXTRACTION_TIMEOUT_SECONDS,
+    MAX_AGGREGATE_BYTES,
+    MAX_UPLOAD_BYTES,
+    MAX_UPLOAD_FILES,
+    ExtractionError,
+    SpeechUnavailableError,
+    extract_upload,
+    sanitize_filename,
+    speech_is_configured,
+)
+from app.fixtures import FIXTURE_CATALOG, FIXTURES_DIR
+from app.models import AnalysisRequest, MeetingMetadata
 from app.pipeline import run_pipeline
 from app.samples import load_samples
-from app.transcript import TranscriptValidationError, get_speakers, parse_transcript
+from app.transcript import (
+    TranscriptValidationError,
+    get_speakers,
+    parse_transcript,
+    parse_transcript_with_metadata,
+)
 
 app = FastAPI(
     title="Meeting Mirror",
@@ -21,6 +46,25 @@ app = FastAPI(
 )
 STATIC_DIR = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/fixtures", StaticFiles(directory=FIXTURES_DIR), name="fixtures")
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; connect-src 'self'; object-src 'none'; "
+        "base-uri 'self'; frame-ancestors 'none'"
+    )
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["Strict-Transport-Security"] = (
+        "max-age=63072000; includeSubDomains"
+    )
+    return response
 
 
 def validate_request(request: AnalysisRequest):
@@ -56,7 +100,9 @@ async def health() -> dict[str, str]:
 async def runtime() -> dict[str, str | bool]:
     return {
         "live_available": live_is_configured(),
-        "default_mode": "live" if live_is_configured() else "demo",
+        "default_mode": "live",
+        "demo_available": os.environ.get("ALLOW_DEMO_MODE", "").lower() == "true",
+        "speech_available": speech_is_configured(),
     }
 
 
@@ -65,10 +111,121 @@ async def samples():
     return load_samples()
 
 
+@app.get("/api/fixtures")
+async def fixtures():
+    return [
+        {
+            **fixture,
+            "download_url": f"/fixtures/{fixture['filename']}",
+        }
+        for fixture in FIXTURE_CATALOG
+    ]
+
+
+@app.post("/api/calendar")
+async def calendar_download(metadata: MeetingMetadata) -> Response:
+    try:
+        content = build_ics(metadata)
+    except CalendarError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return Response(
+        content=content,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="meeting-mirror.ics"'
+        },
+    )
+
+
+@app.post("/api/extract")
+async def extract(file: Annotated[UploadFile, File()]):
+    filename = sanitize_filename(file.filename or "upload")
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    try:
+        async with asyncio.timeout(EXTRACTION_TIMEOUT_SECONDS + 5):
+            transcript, requires_labels, message = await extract_upload(
+                filename, file.content_type, data
+            )
+    except ExtractionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except SpeechUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "filename": filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "size": len(data),
+        "transcript": transcript,
+        "requires_speaker_labels": requires_labels,
+        "message": message,
+    }
+
+
+@app.post("/api/extract/batch")
+async def extract_batch(files: Annotated[list[UploadFile], File()]):
+    if not files or len(files) > MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"파일은 한 번에 1개부터 {MAX_UPLOAD_FILES}개까지 선택할 수 있습니다.",
+        )
+    total_size = 0
+    results: list[dict] = []
+    combined: list[str] = []
+    for upload in files:
+        filename = sanitize_filename(upload.filename or "upload")
+        data = await upload.read(MAX_UPLOAD_BYTES + 1)
+        total_size += len(data)
+        if total_size > MAX_AGGREGATE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="전체 파일 크기는 최대 25MB입니다.",
+            )
+        try:
+            async with asyncio.timeout(EXTRACTION_TIMEOUT_SECONDS + 5):
+                transcript, requires_labels, message = await extract_upload(
+                    filename, upload.content_type, data
+                )
+            results.append(
+                {
+                    "filename": filename,
+                    "content_type": upload.content_type
+                    or "application/octet-stream",
+                    "size": len(data),
+                    "status": "complete",
+                    "requires_speaker_labels": requires_labels,
+                    "message": message,
+                }
+            )
+            combined.append(f"--- 파일: {filename} ---\n{transcript}")
+        except (ExtractionError, SpeechUnavailableError) as exc:
+            results.append(
+                {
+                    "filename": filename,
+                    "content_type": upload.content_type
+                    or "application/octet-stream",
+                    "size": len(data),
+                    "status": "error",
+                    "error": str(exc),
+                }
+            )
+    return {
+        "files": results,
+        "combined_transcript": "\n\n".join(combined),
+        "successful_files": len(combined),
+        "total_files": len(files),
+        "aggregate_size": total_size,
+    }
+
+
 @app.post("/api/parse")
-async def parse(request: AnalysisRequest) -> dict[str, list[str]]:
-    turns = validate_request(request)
-    return {"speakers": get_speakers(turns)}
+async def parse(request: AnalysisRequest) -> dict[str, list[str] | int]:
+    validate_request(request)
+    turns, continuation_count = parse_transcript_with_metadata(
+        request.transcript
+    )
+    return {
+        "speakers": get_speakers(turns),
+        "normalized_lines": continuation_count,
+    }
 
 
 @app.post("/api/analyze")
@@ -78,6 +235,20 @@ async def analyze(request: AnalysisRequest):
         return await run_pipeline(turns, request)
     except LiveConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except DemoModeDisabledError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="AI 심층 분석이 시간 제한을 초과했습니다. 다시 시도해 주세요.",
+        ) from exc
+    except AgentOutputError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"AI 심층 분석 실행에 실패했습니다: {exc}",
+        ) from exc
 
 
 @app.post("/api/analyze/stream")
@@ -114,7 +285,21 @@ async def analyze_stream(request: AnalysisRequest) -> StreamingResponse:
         task = asyncio.create_task(execute())
         try:
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except TimeoutError:
+                    yield (
+                        "data: "
+                        + json.dumps(
+                            {
+                                "type": "heartbeat",
+                                "message": "AI 전문가가 분석 중입니다. 최대 4분 정도 걸릴 수 있습니다.",
+                            },
+                            ensure_ascii=False,
+                        )
+                        + "\n\n"
+                    )
+                    continue
                 if event is None:
                     break
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
