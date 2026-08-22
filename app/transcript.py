@@ -20,12 +20,20 @@ class TranscriptValidationError(ValueError):
 def parse_transcript_with_metadata(
     transcript: str,
 ) -> tuple[list[TranscriptTurn], int]:
+    normalized_transcript = (
+        transcript.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("\\r\\n", "\n")
+        .replace("\\n", "\n")
+    )
     turns: list[TranscriptTurn] = []
     rejected: list[int] = []
     current_source: str | None = None
     continuation_count = 0
 
-    for line_number, raw_line in enumerate(transcript.splitlines(), start=1):
+    for line_number, raw_line in enumerate(
+        normalized_transcript.splitlines(), start=1
+    ):
         if not raw_line.strip():
             continue
         if raw_line.startswith("--- 파일:") and raw_line.rstrip().endswith("---"):

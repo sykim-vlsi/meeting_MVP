@@ -1,6 +1,11 @@
 import pytest
 
-from app.transcript import TranscriptValidationError, get_speakers, parse_transcript
+from app.transcript import (
+    TranscriptValidationError,
+    get_speakers,
+    parse_transcript,
+    parse_transcript_with_metadata,
+)
 
 
 def test_parses_timestamped_and_plain_turns() -> None:
@@ -54,3 +59,20 @@ def test_normalizes_common_bullets_timestamps_and_speaker_labels() -> None:
     assert [turn.speaker for turn in turns] == ["화자 1", "참석자 A", "Speaker 1"]
     assert turns[0].text.endswith("이어집니다")
     assert [turn.timestamp for turn in turns] == ["00:01", "00:08", "00:15"]
+
+
+def test_normalizes_literal_newlines_and_real_continuations() -> None:
+    transcript = (
+        "[00:00] A: 첫 문장\\n두 번째 줄\\r\\n세 번째 줄\n"
+        "[00:20] B: 응답입니다.\n"
+        "이어지는 열네 번째 줄\n"
+        "이어지는 열다섯 번째 줄\\n"
+        "[00:40] A: 마무리합니다."
+    )
+
+    turns, normalized_lines = parse_transcript_with_metadata(transcript)
+
+    assert len(turns) == 3
+    assert normalized_lines == 4
+    assert turns[0].text == "첫 문장 두 번째 줄 세 번째 줄"
+    assert turns[1].text.endswith("이어지는 열네 번째 줄 이어지는 열다섯 번째 줄")

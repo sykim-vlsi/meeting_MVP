@@ -8,6 +8,17 @@ Meeting Mirror has two evidence-first modes: **발표 개선** for structure, cl
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.116.1-009688)](https://fastapi.tiangolo.com/)
 [![Microsoft Agent Framework](https://img.shields.io/badge/Microsoft-Agent_Framework-e14c2a)](https://github.com/microsoft/agent-framework)
 
+## 심사위원 Quick Start / 최초 확인
+
+1. **접속:** <https://ca-meeting-mirror-ygp6sffvrfkjq.braveriver-91d86e5f.koreacentral.azurecontainerapps.io> — 로그인 없음.
+2. **권장 경로:** `회의 맥락·참여자 목적 분석` → `예시로 체험하기`의 한국어 샘플 불러오기(또는 파일/텍스트 입력) → 동의 체크 → **전문가 Agent 분석 시작**.
+3. **대기:** 세 단계가 실시간 표시됩니다. 보통 3분 이내이며 시스템 상한은 4분입니다. 분석 중 새로고침하지 마세요.
+4. **확인:** 한국어 `한눈에 보는 핵심` → 나의 코칭 → 발언자별 명시적 요청/가설/근거/확인 질문 → 실행 계획.
+
+TXT/MD/PDF/DOCX를 지원합니다. 타임스탬프+화자 라벨이 새 발화를 시작하며, 문자 그대로의 `\n`과 여러 줄 계속 문장은 내용 손실 없이 이전 발화에 이어 붙입니다. 발표 개선과 회의 인사이트는 서로 다른 세 Agent 팀을 사용합니다(총 6개 전문 역할). 이는 **모드 라우팅 기반 agentic expert teams**이며 모델 수준 MoE 주장이 아닙니다.
+
+배포는 Azure Container Apps이며, push마다 Ruff/pytest 품질 게이트 후 GitHub OIDC로 SHA 이미지 배포와 공개 smoke test를 실행합니다. 상태는 [`/health`](https://ca-meeting-mirror-ygp6sffvrfkjq.braveriver-91d86e5f.koreacentral.azurecontainerapps.io/health)와 [`/api/runtime`](https://ca-meeting-mirror-ygp6sffvrfkjq.braveriver-91d86e5f.koreacentral.azurecontainerapps.io/api/runtime)에서 확인할 수 있습니다. Production은 실제 GitHub Copilot SDK + Microsoft Agent Framework 경로만 사용하며 demo fallback은 거부합니다. 결과는 한국어로 요청·검증하되 표준 영문 약어·고유명사와 원문 인용은 유지될 수 있습니다. 구현 기준은 [PRD.md](PRD.md)와 [TRD.md](TRD.md)입니다.
+
 ## Public app
 
 No login is required. Upload TXT/MD/PDF/DOCX, paste text, or open **예시로 체험하기**; select your speaker, confirm consent, and run the real three-agent pipeline. Production is AI-only and blocks analysis if the server-side Azure model is unavailable.
