@@ -23,7 +23,7 @@ flowchart LR
 - `app/agents.py` imports `WorkflowBuilder`, `WorkflowContext`, and `executor` from Microsoft Agent Framework.
 - The same file imports `GitHubCopilotAgent` and `GitHubCopilotOptions` from `agent_framework.github`, supplied by pinned package `agent-framework-github-copilot==1.0.3`.
 - `ProviderConfig` comes from pinned transitive package `github-copilot-sdk==1.0.2`. Its `type`, `base_url`, `api_key`, `wire_api`, and `model_id` route each Copilot session through BYOK.
-- Three independently instructed `GitHubCopilotAgent` instances execute inside a `WorkflowBuilder` graph: `self-coach → stakeholder → action-planner`.
+- Meeting Insight now dispatches one normalized payload with `add_fan_out_edges` to SelfCoachAgent and StakeholderAgent concurrently, joins tagged branch results with `add_fan_in_edges`, then invokes ActionPlannerAgent. Each branch is independent; the typed aggregator proves both outputs exist before synthesis.
 - Each node validates model JSON against Pydantic before passing its envelope to the next node.
 - `app/pipeline.py` routes `product_mode` to one of two disjoint contracts and requires live configuration in production. Demo requests require `ALLOW_DEMO_MODE=true`, which production does not set.
 - `app/presentation_agents.py` defines a distinct Structure → Clarity → Rehearsal workflow and validated presentation contract.
@@ -128,3 +128,17 @@ For Azure, set `AZURE_DEV_USER_AGENT=microsoft_foundry_skill` only in the comman
 The current public environment has a server-side Azure OpenAI BYOK secret and exposes only the real agent route. The key is a Container Apps secret and never appears in source, output, or logs. Azure Speech is not configured, so MP3 returns a clear unavailable message. Rule-based analyzers are gated to development/tests. MAF is Layer 1 and Container Apps/Bicep/azd are infrastructure; MCP and Aspire are intentionally absent because no justified remote-tool boundary requires them.
 
 Sanitized verification evidence: a local real Meeting Insight run completed SelfCoachAgent → StakeholderAgent → ActionPlannerAgent with typed summary/stakeholder/action output in 86.16 seconds. The checkpoint public image completed a real streaming meeting run in 55.6 seconds. Final deployment verification runs both real modes again and records only status, latency, stage names/count, and contract presence.
+
+## 평가 기준 대응 근거
+
+| 공식 기준 | 확인 가능한 근거 |
+|---|---|
+| Copilot SDK + MAF · 25% | `app/agents.py:run_live_pipeline`의 실제 `add_fan_out_edges`/`add_fan_in_edges` 그래프, `app/presentation_agents.py`의 별도 순차 그래프, 총 6개 `GitHubCopilotAgent`, Pydantic 계약·한국어 재시도·SSE 단계. |
+| 생산성/문제 적합성 · 18% | `한눈에 보는 핵심`, 본인 코칭, 발언자별 검증 질문, 담당/기한/행동, 복사·JSON·ICS. PRD의 5분 목표는 목표치이며 사용자 연구 결과로 주장하지 않음. |
+| Azure · 18% | 공개 Container Apps URL, `infra/` Bicep, ACR managed-identity pull, Log Analytics, 헬스 프로브, 1 CPU/2Gi, GitHub OIDC SHA 이미지 배포. |
+| 기능 완성도 · 16% | `/api/analyze/stream`, 240초 제한+heartbeat, literal `\\n`/연속 줄 전처리, TXT/MD/PDF/DOCX, 33+ pytest 및 push 품질 게이트. |
+| UX · 12% | 반응형 두 모드 카드, 동적 3-Agent 진행, 취소·재시도·포커스, 파일 큐, IndexedDB 캘린더, copy/download. |
+| RAI/보안 · 6% | 명시 사실/가설 분리, 인용·확신도·확인 질문, 동의와 로컬 저장 분리, prompt-injection 지시, CSP/HSTS, 비밀 미기록. |
+| 혁신성 · 5% | 일반 요약이 아닌 개인 대화 행동 코치 + 이해관계자 목적 검증이며, 모드 라우팅 전문가 팀을 사용. |
+
+공개 SHA `55f7215`에서 관찰한 Meeting Insight API 시간은 66.87초와 115.25초(각 3/3 단계 완료)였다. 이는 자동 API wall-clock 측정이며 사용자 시간 절감 연구가 아니다. 병렬 그래프 배포 후 같은 방식으로 다시 측정한다. MCP/Aspire는 외부 원격 도구 경계가 없어 형식적으로 추가하지 않았고, 외부 CRM/캘린더 연결이 생길 때 검토한다. Key Vault 전환은 향후 보안 로드맵이며 현재 키는 Container Apps secret으로 관리된다.

@@ -19,6 +19,7 @@ from app.transcript import parse_transcript
 class FakeAgent:
     def __init__(self, response: dict):
         self.response = response
+        self.last_prompt = ""
 
     async def __aenter__(self):
         return self
@@ -27,6 +28,7 @@ class FakeAgent:
         return None
 
     async def run(self, _prompt: str):
+        self.last_prompt = _prompt
         return SimpleNamespace(text=json.dumps(self.response, ensure_ascii=False))
 
 
@@ -62,10 +64,16 @@ async def test_meeting_live_workflow_allows_no_progress_callback(monkeypatch) ->
             "action_plan": plan.model_dump(mode="json"),
         },
     }
+    action_agent = FakeAgent(responses["ActionPlannerAgent"])
+    agents = {
+        "SelfCoachAgent": FakeAgent(responses["SelfCoachAgent"]),
+        "StakeholderAgent": FakeAgent(responses["StakeholderAgent"]),
+        "ActionPlannerAgent": action_agent,
+    }
     monkeypatch.setattr(
         meeting_agents,
         "_make_agent",
-        lambda name, _instructions: FakeAgent(responses[name]),
+        lambda name, _instructions: agents[name],
     )
     request = AnalysisRequest(
         transcript=sample.transcript,
@@ -79,6 +87,10 @@ async def test_meeting_live_workflow_allows_no_progress_callback(monkeypatch) ->
     assert result.mode == "live"
     assert len(result.pipeline) == 3
     assert result.executive_summary.headline
+    assert "본인 코칭(JSON)" in action_agent.last_prompt
+    assert "이해관계자 맵(JSON)" in action_agent.last_prompt
+    assert coaching.summary in action_agent.last_prompt
+    assert stakeholders[0].core_perspective in action_agent.last_prompt
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import time
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from typing import Literal, Never, TypeVar, cast
@@ -265,8 +266,13 @@ async def run_live_pipeline(
         ),
     )
 
+    @executor(id="meeting-dispatcher")
+    async def dispatcher_node(payload: str, ctx: WorkflowContext[str]) -> None:
+        await ctx.send_message(payload)
+
     @executor(id="self-coach")
     async def self_coach_node(payload: str, ctx: WorkflowContext[str]) -> None:
+        started = time.perf_counter()
         await emit(
             "self-coach",
             "running",
@@ -281,12 +287,31 @@ async def run_live_pipeline(
         coaching = await _run_validated(
             self_agent, prompt, SelfCoaching, "SelfCoachAgent"
         )
-        source["self_coaching"] = coaching.model_dump()
-        await emit("self-coach", "complete", "본인 코칭을 완료했습니다.")
-        await ctx.send_message(json.dumps(source, ensure_ascii=False))
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        logger.info(
+            "agent_stage product_mode=meeting-insight agent=SelfCoachAgent status=complete elapsed_ms=%d model_id=%s",
+            elapsed_ms,
+            os.environ.get("BYOK_MODEL_ID", "configured-model"),
+        )
+        await emit(
+            "self-coach",
+            "complete",
+            f"본인 코칭 완료 · {elapsed_ms / 1000:.1f}초",
+        )
+        await ctx.send_message(
+            json.dumps(
+                {
+                    "branch": "self",
+                    "base": source,
+                    "self_coaching": coaching.model_dump(),
+                },
+                ensure_ascii=False,
+            )
+        )
 
     @executor(id="stakeholder")
     async def stakeholder_node(payload: str, ctx: WorkflowContext[str]) -> None:
+        started = time.perf_counter()
         await emit(
             "stakeholder", "running", "다른 화자의 명시적 요구와 가설을 분리합니다."
         )
@@ -294,7 +319,6 @@ async def run_live_pipeline(
         prompt = (
             f"본인 화자: {source['self_speaker']}\n"
             f"대화록(JSON): {json.dumps(source['turns'], ensure_ascii=False)}\n"
-            f"본인 코칭(JSON): {json.dumps(source['self_coaching'], ensure_ascii=False)}\n"
             f"출력 JSON Schema: {stakeholder_schema}"
         )
         expected = {
@@ -342,18 +366,48 @@ async def run_live_pipeline(
             raise AgentOutputError(
                 "StakeholderAgent가 모든 다른 화자를 정확히 포함하지 않았습니다."
             )
-        source["stakeholders"] = output.model_dump()["stakeholders"]
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        logger.info(
+            "agent_stage product_mode=meeting-insight agent=StakeholderAgent status=complete elapsed_ms=%d model_id=%s",
+            elapsed_ms,
+            os.environ.get("BYOK_MODEL_ID", "configured-model"),
+        )
         await emit(
             "stakeholder",
             "complete",
-            f"{len(output.stakeholders)}명의 근거 기반 맵을 완성했습니다.",
+            f"{len(output.stakeholders)}명 맵 완료 · {elapsed_ms / 1000:.1f}초",
         )
-        await ctx.send_message(json.dumps(source, ensure_ascii=False))
+        await ctx.send_message(
+            json.dumps(
+                {
+                    "branch": "stakeholder",
+                    "base": source,
+                    "stakeholders": output.model_dump()["stakeholders"],
+                },
+                ensure_ascii=False,
+            )
+        )
+
+    @executor(id="meeting-aggregator")
+    async def aggregator_node(
+        branch_results: list[str], ctx: WorkflowContext[str]
+    ) -> None:
+        branches = {
+            parsed["branch"]: parsed
+            for parsed in (json.loads(item) for item in branch_results)
+        }
+        if set(branches) != {"self", "stakeholder"}:
+            raise AgentOutputError("병렬 분석 결과 두 가지를 모두 받지 못했습니다.")
+        merged = branches["self"]["base"]
+        merged["self_coaching"] = branches["self"]["self_coaching"]
+        merged["stakeholders"] = branches["stakeholder"]["stakeholders"]
+        await ctx.send_message(json.dumps(merged, ensure_ascii=False))
 
     @executor(id="action-planner")
     async def action_node(
         payload: str, ctx: WorkflowContext[Never, str]
     ) -> None:
+        started = time.perf_counter()
         await emit(
             "action-planner", "running", "이전 에이전트 출력을 실행 계획으로 종합합니다."
         )
@@ -371,13 +425,28 @@ async def run_live_pipeline(
         )
         source["executive_summary"] = synthesis.executive_summary.model_dump()
         source["action_plan"] = synthesis.action_plan.model_dump()
-        await emit("action-planner", "complete", "실행 계획을 완성했습니다.")
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        logger.info(
+            "agent_stage product_mode=meeting-insight agent=ActionPlannerAgent status=complete elapsed_ms=%d model_id=%s",
+            elapsed_ms,
+            os.environ.get("BYOK_MODEL_ID", "configured-model"),
+        )
+        await emit(
+            "action-planner",
+            "complete",
+            f"실행 계획 완료 · {elapsed_ms / 1000:.1f}초",
+        )
         await ctx.yield_output(json.dumps(source, ensure_ascii=False))
 
     workflow = (
-        WorkflowBuilder(start_executor=self_coach_node)
-        .add_edge(self_coach_node, stakeholder_node)
-        .add_edge(stakeholder_node, action_node)
+        WorkflowBuilder(start_executor=dispatcher_node)
+        .add_fan_out_edges(
+            dispatcher_node, [self_coach_node, stakeholder_node]
+        )
+        .add_fan_in_edges(
+            [self_coach_node, stakeholder_node], aggregator_node
+        )
+        .add_edge(aggregator_node, action_node)
         .build()
     )
     initial = json.dumps(
@@ -391,6 +460,7 @@ async def run_live_pipeline(
         ensure_ascii=False,
     )
 
+    workflow_started = time.perf_counter()
     async with AsyncExitStack() as stack:
         await stack.enter_async_context(self_agent)
         await stack.enter_async_context(stakeholder_agent)
@@ -398,6 +468,12 @@ async def run_live_pipeline(
         timeout_seconds = float(os.environ.get("LIVE_AGENT_TIMEOUT_SECONDS", "240"))
         async with asyncio.timeout(timeout_seconds):
             workflow_result = await workflow.run(initial)
+    total_elapsed_ms = round((time.perf_counter() - workflow_started) * 1000)
+    logger.info(
+        "agent_workflow product_mode=meeting-insight status=complete elapsed_ms=%d model_id=%s graph=fan-out-fan-in",
+        total_elapsed_ms,
+        os.environ.get("BYOK_MODEL_ID", "configured-model"),
+    )
 
     outputs = workflow_result.get_outputs()
     if not outputs:

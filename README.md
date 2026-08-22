@@ -38,6 +38,8 @@ flowchart LR
 
 The app uses `agent-framework-github-copilot==1.0.3`, Agent Framework `WorkflowBuilder`, and six specialized `GitHubCopilotAgent` roles. A typed product-mode router selects exactly one disjoint three-agent team. This is **모드 라우팅 기반 Agentic MoE**, not a model-level mixture-of-experts claim.
 
+Meeting Insight uses a real MAF fan-out/fan-in graph: SelfCoachAgent and StakeholderAgent run concurrently from one dispatcher, a typed aggregator joins both results, and ActionPlannerAgent synthesizes the final report. Before this optimization, verified public meeting runs on SHA `55f7215` took 66.87s and 115.25s; these are automated wall-clock observations, not a user study or productivity claim.
+
 The page also includes an on-device meeting calendar backed by IndexedDB. Its seeded examples and user-saved metadata stay in that browser. Transcript/result persistence is opt-in and off by default. ICS export includes schedule metadata but never the transcript or inferred stakeholder details.
 
 ## Run locally
